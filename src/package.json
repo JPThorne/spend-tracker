@@ -1,0 +1,19 @@
+{
+  "name": "transaction-categorization-api",
+  "version": "1.0.0",
+  "description": "Google Cloud Function for transaction categorization",
+  "main": "ingestion-api.js",
+  "type": "module",
+  "scripts": {
+    "start": "functions-framework --target=helloHttp --source=."
+  },
+  "dependencies": {
+    "@google-cloud/storage": "^7.7.0"
+  },
+  "devDependencies": {
+    "@google-cloud/functions-framework": "^3.3.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
