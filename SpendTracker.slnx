@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="SpendTracker.Api/SpendTracker.Api.csproj" />
+  <Project Path="SpendTracker.Blazor/SpendTracker.Blazor.csproj" />
+  <Project Path="SpendTracker.Core/SpendTracker.Core.csproj" />
+  <Project Path="SpendTracker.Infrastructure/SpendTracker.Infrastructure.csproj" />
+</Solution>
