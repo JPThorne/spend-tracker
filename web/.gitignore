@@ -1,0 +1,24 @@
+# Environment variables
+.env.yaml
+.env
+
+# Node modules
+node_modules/
+src/node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Google Cloud
+.gcloud/
+key.json
+*.key

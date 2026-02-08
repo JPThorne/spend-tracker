@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transaction Categorization Tool</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>💰 Transaction Categorization</h1>
+            <div class="connection-panel" id="connectionPanel">
+                <div class="connection-form">
+                    <input type="text" id="apiUrl" placeholder="API URL (e.g., https://your-api.com)" class="input">
+                    <input type="password" id="apiKey" placeholder="Enter API Key" class="input">
+                    <button id="connectBtn" class="btn btn-primary">Connect</button>
+                </div>
+                <div class="connection-status" id="connectionStatus">
+                    <span class="status-dot disconnected"></span>
+                    <span id="statusText">Disconnected</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content" id="mainContent" style="display: none;">
+            <!-- Category Management Section -->
+            <section class="category-section">
+                <div class="section-header">
+                    <h2>Categories</h2>
+                    <button id="addCategoryBtn" class="btn btn-secondary">+ Add Category</button>
+                </div>
+                <div class="category-list" id="categoryList">
+                    <!-- Categories will be loaded here -->
+                </div>
+            </section>
+
+            <!-- Transaction List Section -->
+            <section class="transaction-section">
+                <div class="section-header">
+                    <h2>Uncategorized Transactions</h2>
+                    <div class="bulk-actions">
+                        <button id="categorizeSelectedBtn" class="btn btn-secondary" disabled>
+                            Categorize Selected (<span id="selectedCount">0</span>)
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table class="transaction-table">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="selectAll"></th>
+                                <th>Date</th>
+                                <th>Merchant</th>
+                                <th>Amount</th>
+                                <th>Country</th>
+                                <th>Category</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transactionTableBody">
+                            <!-- Transactions will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pagination" id="pagination">
+                    <button id="prevBtn" class="btn btn-secondary" disabled>Previous</button>
+                    <span id="paginationInfo">0-0 of 0</span>
+                    <button id="nextBtn" class="btn btn-secondary" disabled>Next</button>
+                </div>
+            </section>
+        </main>
+
+        <div class="loading" id="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Loading...</p>
+        </div>
+    </div>
+
+    <!-- Add/Edit Category Modal -->
+    <div class="modal" id="categoryModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Add Category</h2>
+                <button class="modal-close" id="modalClose">&times;</button>
+            </div>
+            <form id="categoryForm">
+                <div class="form-group">
+                    <label for="categoryId">Category ID</label>
+                    <input type="text" id="categoryId" class="input" required pattern="[a-z0-9-]+" placeholder="e.g., groceries">
+                    <small>Lowercase letters, numbers, and hyphens only</small>
+                </div>
+                <div class="form-group">
+                    <label for="categoryName">Category Name</label>
+                    <input type="text" id="categoryName" class="input" required placeholder="e.g., Groceries & Food">
+                </div>
+                <div class="form-group">
+                    <label for="categoryColor">Color</label>
+                    <input type="color" id="categoryColor" class="input" required value="#4CAF50">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveCategoryBtn">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Bulk Categorization Modal -->
+    <div class="modal" id="bulkModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Categorize Selected Transactions</h2>
+                <button class="modal-close" id="bulkModalClose">&times;</button>
+            </div>
+            <div class="form-group">
+                <label for="bulkCategory">Select Category</label>
+                <select id="bulkCategory" class="input">
+                    <option value="">-- Select a category --</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" id="bulkCancelBtn">Cancel</button>
+                <button type="button" class="btn btn-primary" id="bulkSaveBtn">Categorize</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
