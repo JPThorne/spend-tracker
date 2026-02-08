@@ -11,12 +11,12 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
-// Configure PostgreSQL Database
+// Configure SQLite Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
-    ?? "Host=localhost;Database=spendtracker;Username=postgres;Password=postgres";
+    ?? "Data Source=spendtracker.db";
 
 builder.Services.AddDbContext<SpendTrackerDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseSqlite(connectionString));
 
 // Register repositories
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
@@ -37,6 +37,10 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Run database migrations using DbUp
+var logger = app.Services.GetRequiredService<ILogger<Program>>();
+DatabaseUpgrader.UpgradeDatabase(connectionString, logger);
 
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
