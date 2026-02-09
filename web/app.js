@@ -7,6 +7,12 @@ let selectedTransactions = new Set();
 let currentView = 'categorize'; // 'categorize' or 'categories'
 let expandedCategories = new Set();
 let categoryTransactions = {}; // Cache: { categoryId: [transactions] }
+let selectedDateRange = {
+    preset: 'this-month',
+    startDate: null,
+    endDate: null
+};
+let previousPeriodData = null; // For comparisons
 
 // DOM Elements
 const elements = {
@@ -388,7 +394,8 @@ function showCategoryView() {
     if (tabCategorize) tabCategorize.classList.remove('active');
     if (tabCategories) tabCategories.classList.add('active');
     
-    renderCategoryDetailView();
+    // Apply default date filter (this-month) on first load
+    applyDateFilter();
 }
 
 // Category Detail View Functions
@@ -482,7 +489,16 @@ window.toggleCategoryTransactions = async function(categoryId) {
 
 async function loadCategoryTransactions(categoryId) {
     try {
-        const data = await apiRequest(`/categories/${categoryId}/transactions`);
+        let endpoint = `/categories/${categoryId}/transactions`;
+        
+        // Apply date filter if active
+        if (selectedDateRange.startDate && selectedDateRange.endDate) {
+            const start = formatDateForApi(selectedDateRange.startDate);
+            const end = formatDateForApi(selectedDateRange.endDate);
+            endpoint += `?startDate=${start}&endDate=${end}`;
+        }
+        
+        const data = await apiRequest(endpoint);
         if (data) {
             categoryTransactions[categoryId] = data;
         }
@@ -545,6 +561,250 @@ window.reassignTransaction = async function(transactionId, newCategoryId) {
         showError('Failed to reassign transaction: ' + err.message);
         hideLoading();
     }
+};
+
+// Date Filtering Functions
+function calculateDateRange(preset) {
+    const now = new Date();
+    const ranges = {
+        'this-month': () => {
+            const start = new Date(now.getFullYear(), now.getMonth(), 1);
+            const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+            return { start, end };
+        },
+        'last-month': () => {
+            const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const end = new Date(now.getFullYear(), now.getMonth(), 0);
+            return { start, end };
+        },
+        'last-3-months': () => {
+            const start = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+            const end = new Date(now.getFullYear(), now.getMonth(), 0);
+            return { start, end };
+        },
+        'this-quarter': () => {
+            const quarter = Math.floor(now.getMonth() / 3);
+            const start = new Date(now.getFullYear(), quarter * 3, 1);
+            const end = new Date(now.getFullYear(), (quarter + 1) * 3, 0);
+            return { start, end };
+        },
+        'last-quarter': () => {
+            const quarter = Math.floor(now.getMonth() / 3) - 1;
+            const year = quarter < 0 ? now.getFullYear() - 1 : now.getFullYear();
+            const adjustedQuarter = quarter < 0 ? 3 : quarter;
+            const start = new Date(year, adjustedQuarter * 3, 1);
+            const end = new Date(year, (adjustedQuarter + 1) * 3, 0);
+            return { start, end };
+        },
+        'this-year': () => {
+            const start = new Date(now.getFullYear(), 0, 1);
+            const end = new Date(now.getFullYear(), 11, 31);
+            return { start, end };
+        },
+        'last-year': () => {
+            const start = new Date(now.getFullYear() - 1, 0, 1);
+            const end = new Date(now.getFullYear() - 1, 11, 31);
+            return { start, end };
+        },
+        'all-time': () => {
+            return { start: null, end: null };
+        }
+    };
+    
+    return ranges[preset] ? ranges[preset]() : { start: null, end: null };
+}
+
+function calculatePreviousPeriod(startDate, endDate) {
+    if (!startDate || !endDate) return { start: null, end: null };
+    
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const duration = end - start;
+    
+    const prevEnd = new Date(start);
+    prevEnd.setDate(prevEnd.getDate() - 1);
+    
+    const prevStart = new Date(prevEnd);
+    prevStart.setTime(prevStart.getTime() - duration);
+    
+    return { start: prevStart, end: prevEnd };
+}
+
+function formatDateForApi(date) {
+    if (!date) return null;
+    return date.toISOString().split('T')[0];
+}
+
+function formatDateRangeDisplay(startDate, endDate) {
+    if (!startDate || !endDate) return 'All Time';
+    
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const options = { month: 'short', year: 'numeric' };
+    
+    if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
+        return start.toLocaleDateString('en-ZA', options);
+    }
+    
+    return `${start.toLocaleDateString('en-ZA', { month: 'short', year: 'numeric' })} - ${end.toLocaleDateString('en-ZA', { month: 'short', year: 'numeric' })}`;
+}
+
+function calculateComparison(current, previous) {
+    if (!previous || previous === 0) return null;
+    const change = ((current - previous) / previous) * 100;
+    return {
+        percentage: Math.abs(change).toFixed(1),
+        direction: change > 0 ? 'up' : change < 0 ? 'down' : 'same',
+        increase: change > 0
+    };
+}
+
+async function loadCategoriesWithDateFilter(startDate, endDate) {
+    try {
+        let endpoint = '/categories';
+        if (startDate && endDate) {
+            const start = formatDateForApi(startDate);
+            const end = formatDateForApi(endDate);
+            endpoint += `?startDate=${start}&endDate=${end}`;
+        }
+        
+        const data = await apiRequest(endpoint);
+        if (!data) return null;
+        
+        return data;
+    } catch (err) {
+        console.error('Error loading categories with date filter:', err);
+        showError('Failed to load categories: ' + err.message);
+        return null;
+    }
+}
+
+async function loadPreviousPeriodData(startDate, endDate) {
+    const prevPeriod = calculatePreviousPeriod(startDate, endDate);
+    if (!prevPeriod.start || !prevPeriod.end) return null;
+    
+    return await loadCategoriesWithDateFilter(prevPeriod.start, prevPeriod.end);
+}
+
+function calculateTotalSpending(categories) {
+    return categories.reduce((sum, cat) => sum + cat.totalSpending, 0);
+}
+
+async function applyDateFilter() {
+    const preset = selectedDateRange.preset;
+    
+    if (preset === 'custom') {
+        // Custom dates are already set in selectedDateRange
+        if (!selectedDateRange.startDate || !selectedDateRange.endDate) {
+            showError('Please select both start and end dates');
+            return;
+        }
+    } else {
+        const range = calculateDateRange(preset);
+        selectedDateRange.startDate = range.start;
+        selectedDateRange.endDate = range.end;
+    }
+    
+    showLoading();
+    
+    // Load current period data
+    categories = await loadCategoriesWithDateFilter(selectedDateRange.startDate, selectedDateRange.endDate) || [];
+    
+    // Load previous period for comparison
+    previousPeriodData = await loadPreviousPeriodData(selectedDateRange.startDate, selectedDateRange.endDate);
+    
+    // Clear transaction cache
+    categoryTransactions = {};
+    expandedCategories.clear();
+    
+    // Update UI
+    renderCategoryDetailView();
+    updateDateFilterDisplay();
+    
+    hideLoading();
+}
+
+function updateDateFilterDisplay() {
+    const displayElement = document.getElementById('dateRangeDisplay');
+    if (!displayElement) return;
+    
+    const dateText = formatDateRangeDisplay(selectedDateRange.startDate, selectedDateRange.endDate);
+    const totalSpending = calculateTotalSpending(categories);
+    
+    let comparisonHtml = '';
+    if (previousPeriodData) {
+        const prevTotal = calculateTotalSpending(previousPeriodData);
+        const comparison = calculateComparison(totalSpending, prevTotal);
+        
+        if (comparison) {
+            const arrow = comparison.direction === 'up' ? '↑' : comparison.direction === 'down' ? '↓' : '→';
+            const colorClass = comparison.increase ? 'comparison-up' : 'comparison-down';
+            const prevPeriodName = getPreviousPeriodName(selectedDateRange.preset);
+            
+            comparisonHtml = `<span class="${colorClass}">${arrow} ${comparison.percentage}% vs ${prevPeriodName}</span>`;
+        }
+    }
+    
+    displayElement.innerHTML = `
+        <span class="date-range-text">📅 ${dateText}</span>
+        <span class="total-spending">• ${formatCurrency(totalSpending)}</span>
+        ${comparisonHtml ? ` • ${comparisonHtml}` : ''}
+    `;
+}
+
+function getPreviousPeriodName(preset) {
+    const names = {
+        'this-month': 'Last Month',
+        'last-month': 'Month Before',
+        'last-3-months': 'Previous 3 Months',
+        'this-quarter': 'Last Quarter',
+        'last-quarter': 'Quarter Before',
+        'this-year': 'Last Year',
+        'last-year': 'Year Before'
+    };
+    return names[preset] || 'Previous Period';
+}
+
+window.onDatePresetChange = function() {
+    const select = document.getElementById('datePreset');
+    if (!select) return;
+    
+    selectedDateRange.preset = select.value;
+    
+    const customInputs = document.getElementById('customDateInputs');
+    if (customInputs) {
+        customInputs.style.display = selectedDateRange.preset === 'custom' ? 'flex' : 'none';
+    }
+    
+    if (selectedDateRange.preset !== 'custom') {
+        applyDateFilter();
+    }
+};
+
+window.applyCustomDateRange = function() {
+    const startInput = document.getElementById('customStartDate');
+    const endInput = document.getElementById('customEndDate');
+    
+    if (!startInput || !endInput) return;
+    
+    const startDate = startInput.value ? new Date(startInput.value) : null;
+    const endDate = endInput.value ? new Date(endInput.value) : null;
+    
+    if (!startDate || !endDate) {
+        showError('Please select both start and end dates');
+        return;
+    }
+    
+    if (startDate > endDate) {
+        showError('Start date must be before end date');
+        return;
+    }
+    
+    selectedDateRange.startDate = startDate;
+    selectedDateRange.endDate = endDate;
+    selectedDateRange.preset = 'custom';
+    
+    applyDateFilter();
 };
 
 // CSV Upload Function

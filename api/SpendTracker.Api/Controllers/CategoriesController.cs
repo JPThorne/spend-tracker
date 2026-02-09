@@ -15,18 +15,36 @@ public class CategoriesController(
     private readonly ILogger<CategoriesController> _logger = logger;
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<CategoryDto>>> GetAllCategories()
+    public async Task<ActionResult<IEnumerable<CategoryDto>>> GetAllCategories(
+        [FromQuery] DateTime? startDate = null,
+        [FromQuery] DateTime? endDate = null)
     {
         var categories = await _categoryRepository.GetAllAsync();
         
-        var categoryDtos = categories.Select(c => new CategoryDto(
-            c.Id,
-            c.Name,
-            c.Description,
-            c.CreatedDate,
-            c.Transactions.Count,
-            c.Transactions.Where(t => t.Debit.HasValue).Sum(t => t.Debit!.Value)
-        ));
+        var categoryDtos = categories.Select(c =>
+        {
+            // Filter transactions by date range if provided
+            var transactions = c.Transactions.AsEnumerable();
+            if (startDate.HasValue)
+            {
+                transactions = transactions.Where(t => t.TransactionDate >= startDate.Value);
+            }
+            if (endDate.HasValue)
+            {
+                transactions = transactions.Where(t => t.TransactionDate <= endDate.Value);
+            }
+            
+            var transactionList = transactions.ToList();
+            
+            return new CategoryDto(
+                c.Id,
+                c.Name,
+                c.Description,
+                c.CreatedDate,
+                transactionList.Count,
+                transactionList.Where(t => t.Debit.HasValue).Sum(t => t.Debit!.Value)
+            );
+        });
 
         return Ok(categoryDtos);
     }
@@ -54,7 +72,10 @@ public class CategoriesController(
     }
 
     [HttpGet("{id}/transactions")]
-    public async Task<ActionResult<IEnumerable<TransactionDto>>> GetCategoryTransactions(int id)
+    public async Task<ActionResult<IEnumerable<TransactionDto>>> GetCategoryTransactions(
+        int id,
+        [FromQuery] DateTime? startDate = null,
+        [FromQuery] DateTime? endDate = null)
     {
         var category = await _categoryRepository.GetByIdAsync(id);
         if (category == null)
@@ -63,6 +84,16 @@ public class CategoriesController(
         }
 
         var transactions = await _categoryRepository.GetTransactionsByCategoryIdAsync(id);
+        
+        // Filter by date range if provided
+        if (startDate.HasValue)
+        {
+            transactions = transactions.Where(t => t.TransactionDate >= startDate.Value);
+        }
+        if (endDate.HasValue)
+        {
+            transactions = transactions.Where(t => t.TransactionDate <= endDate.Value);
+        }
         
         var transactionDtos = transactions.Select(t => new TransactionDto(
             t.Id,

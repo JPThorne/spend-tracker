@@ -97,6 +97,36 @@
                         <h2>Categories & Transactions</h2>
                         <p class="section-subtitle">Sorted by spending (highest first)</p>
                     </div>
+                    
+                    <!-- Date Filter Panel -->
+                    <div class="date-filter-panel">
+                        <div class="date-filter-controls">
+                            <label for="datePreset">Date Range:</label>
+                            <select id="datePreset" class="input" onchange="onDatePresetChange()">
+                                <option value="this-month">This Month</option>
+                                <option value="last-month">Last Month</option>
+                                <option value="last-3-months">Last 3 Months</option>
+                                <option value="this-quarter">This Quarter</option>
+                                <option value="last-quarter">Last Quarter</option>
+                                <option value="this-year">This Year</option>
+                                <option value="last-year">Last Year</option>
+                                <option value="all-time">All Time</option>
+                                <option value="custom">Custom Range</option>
+                            </select>
+                            
+                            <div id="customDateInputs" class="custom-date-inputs" style="display: none;">
+                                <input type="date" id="customStartDate" class="input">
+                                <span>to</span>
+                                <input type="date" id="customEndDate" class="input">
+                                <button class="btn btn-primary btn-sm" onclick="applyCustomDateRange()">Apply</button>
+                            </div>
+                        </div>
+                        
+                        <div id="dateRangeDisplay" class="date-range-display">
+                            <!-- Date range summary will be displayed here -->
+                        </div>
+                    </div>
+                    
                     <div id="categoryDetailContainer">
                         <!-- Category details will be loaded here -->
                     </div>
