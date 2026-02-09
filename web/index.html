@@ -21,11 +21,23 @@
                     <span id="statusText">Disconnected</span>
                 </div>
             </div>
+            
+            <!-- Navigation Tabs -->
+            <div class="view-tabs" id="viewTabs" style="display: none;">
+                <button id="tabCategorize" class="tab-btn active" onclick="showCategorizeView()">
+                    📋 Categorize Transactions
+                </button>
+                <button id="tabCategories" class="tab-btn" onclick="showCategoryView()">
+                    📊 View Categories
+                </button>
+            </div>
         </header>
 
         <main class="main-content" id="mainContent" style="display: none;">
-            <!-- CSV Upload Section -->
-            <section class="upload-section">
+            <!-- Categorize View -->
+            <div id="categorizeView">
+                <!-- CSV Upload Section -->
+                <section class="upload-section">
                 <div class="section-header">
                     <h2>Upload Transactions</h2>
                 </div>
@@ -75,6 +87,22 @@
                     </table>
                 </div>
             </section>
+            </div>
+            <!-- End Categorize View -->
+            
+            <!-- Category Detail View -->
+            <div id="categoryDetailView" style="display: none;">
+                <section class="category-detail-section">
+                    <div class="section-header">
+                        <h2>Categories & Transactions</h2>
+                        <p class="section-subtitle">Sorted by spending (highest first)</p>
+                    </div>
+                    <div id="categoryDetailContainer">
+                        <!-- Category details will be loaded here -->
+                    </div>
+                </section>
+            </div>
+            <!-- End Category Detail View -->
         </main>
 
         <div class="loading" id="loading" style="display: none;">

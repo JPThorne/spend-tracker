@@ -4,6 +4,9 @@ let API_KEY = '';
 let categories = [];
 let transactions = [];
 let selectedTransactions = new Set();
+let currentView = 'categorize'; // 'categorize' or 'categories'
+let expandedCategories = new Set();
+let categoryTransactions = {}; // Cache: { categoryId: [transactions] }
 
 // DOM Elements
 const elements = {
@@ -115,7 +118,10 @@ async function loadTransactions() {
 function renderCategories() {
     if (!elements.categoryList) return;
     
-    elements.categoryList.innerHTML = categories.map(cat => `
+    // Sort categories by totalSpending (descending)
+    const sortedCategories = [...categories].sort((a, b) => b.totalSpending - a.totalSpending);
+    
+    elements.categoryList.innerHTML = sortedCategories.map(cat => `
         <div class="category-card">
             <div class="category-info">
                 <div class="category-badge">
@@ -356,6 +362,191 @@ async function categorizeBulk() {
     }
 }
 
+// View Switching Functions
+function showCategorizeView() {
+    currentView = 'categorize';
+    const categorizeView = document.getElementById('categorizeView');
+    const categoryDetailView = document.getElementById('categoryDetailView');
+    const tabCategorize = document.getElementById('tabCategorize');
+    const tabCategories = document.getElementById('tabCategories');
+    
+    if (categorizeView) categorizeView.style.display = 'block';
+    if (categoryDetailView) categoryDetailView.style.display = 'none';
+    if (tabCategorize) tabCategorize.classList.add('active');
+    if (tabCategories) tabCategories.classList.remove('active');
+}
+
+function showCategoryView() {
+    currentView = 'categories';
+    const categorizeView = document.getElementById('categorizeView');
+    const categoryDetailView = document.getElementById('categoryDetailView');
+    const tabCategorize = document.getElementById('tabCategorize');
+    const tabCategories = document.getElementById('tabCategories');
+    
+    if (categorizeView) categorizeView.style.display = 'none';
+    if (categoryDetailView) categoryDetailView.style.display = 'block';
+    if (tabCategorize) tabCategorize.classList.remove('active');
+    if (tabCategories) tabCategories.classList.add('active');
+    
+    renderCategoryDetailView();
+}
+
+// Category Detail View Functions
+function renderCategoryDetailView() {
+    const container = document.getElementById('categoryDetailContainer');
+    if (!container) return;
+    
+    // Sort categories by totalSpending (descending)
+    const sortedCategories = [...categories].sort((a, b) => b.totalSpending - a.totalSpending);
+    
+    container.innerHTML = sortedCategories.map(cat => {
+        const isExpanded = expandedCategories.has(cat.id);
+        const icon = isExpanded ? '▼' : '▶';
+        
+        return `
+            <div class="category-detail-card" data-category-id="${cat.id}">
+                <div class="category-detail-header" onclick="toggleCategoryTransactions(${cat.id})">
+                    <span class="expand-icon">${icon}</span>
+                    <div class="category-detail-info">
+                        <h3>${cat.name}</h3>
+                        <p class="category-detail-stats">
+                            ${formatCurrency(cat.totalSpending)} • ${cat.transactionCount} transactions
+                        </p>
+                    </div>
+                </div>
+                <div class="category-detail-transactions" id="transactions-${cat.id}" style="display: ${isExpanded ? 'block' : 'none'};">
+                    ${isExpanded ? renderCategoryTransactions(cat.id) : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderCategoryTransactions(categoryId) {
+    const txns = categoryTransactions[categoryId];
+    
+    if (!txns) {
+        return '<div class="loading-transactions">Loading...</div>';
+    }
+    
+    if (txns.length === 0) {
+        return '<div class="no-transactions">No transactions in this category</div>';
+    }
+    
+    return `
+        <table class="category-transactions-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Amount</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${txns.map(t => `
+                    <tr>
+                        <td>${formatDate(t.transactionDate)}</td>
+                        <td>${t.description}</td>
+                        <td>${formatAmount(t.debit, t.credit)}</td>
+                        <td class="transaction-actions">
+                            <button class="btn btn-sm btn-secondary" onclick="removeTransactionFromCategory(${t.id})">
+                                Remove
+                            </button>
+                            <select class="reassign-select" onchange="reassignTransaction(${t.id}, this.value)" data-transaction-id="${t.id}">
+                                <option value="">Re-assign</option>
+                                ${categories.filter(c => c.id !== categoryId).map(c => `
+                                    <option value="${c.id}">${c.name}</option>
+                                `).join('')}
+                            </select>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+window.toggleCategoryTransactions = async function(categoryId) {
+    if (expandedCategories.has(categoryId)) {
+        expandedCategories.delete(categoryId);
+    } else {
+        expandedCategories.add(categoryId);
+        // Load transactions if not cached
+        if (!categoryTransactions[categoryId]) {
+            await loadCategoryTransactions(categoryId);
+        }
+    }
+    renderCategoryDetailView();
+};
+
+async function loadCategoryTransactions(categoryId) {
+    try {
+        const data = await apiRequest(`/categories/${categoryId}/transactions`);
+        if (data) {
+            categoryTransactions[categoryId] = data;
+        }
+    } catch (err) {
+        console.error(`Error loading transactions for category ${categoryId}:`, err);
+        categoryTransactions[categoryId] = [];
+    }
+}
+
+window.removeTransactionFromCategory = async function(transactionId) {
+    if (!confirm('Remove this transaction from its category?')) return;
+    
+    try {
+        showLoading();
+        await apiRequest(`/transactions/${transactionId}/category`, 'DELETE');
+        
+        // Clear cache and reload
+        categoryTransactions = {};
+        expandedCategories.clear();
+        await loadCategories();
+        await loadTransactions(); // Reload uncategorized list
+        
+        if (currentView === 'categories') {
+            renderCategoryDetailView();
+        }
+        
+        showSuccess('Transaction removed from category!');
+        hideLoading();
+    } catch (err) {
+        console.error('Error removing transaction from category:', err);
+        showError('Failed to remove transaction: ' + err.message);
+        hideLoading();
+    }
+};
+
+window.reassignTransaction = async function(transactionId, newCategoryId) {
+    if (!newCategoryId) return;
+    
+    const categoryIdInt = parseInt(newCategoryId);
+    
+    try {
+        showLoading();
+        await apiRequest(`/transactions/${transactionId}/category`, 'PUT', {
+            categoryId: categoryIdInt
+        });
+        
+        // Clear cache and reload
+        categoryTransactions = {};
+        expandedCategories.clear();
+        await loadCategories();
+        
+        if (currentView === 'categories') {
+            renderCategoryDetailView();
+        }
+        
+        showSuccess('Transaction reassigned successfully!');
+        hideLoading();
+    } catch (err) {
+        console.error('Error reassigning transaction:', err);
+        showError('Failed to reassign transaction: ' + err.message);
+        hideLoading();
+    }
+};
+
 // CSV Upload Function
 async function uploadCsv() {
     const fileInput = elements.csvFileInput;
@@ -406,6 +597,11 @@ if (elements.connectBtn) {
             elements.statusText.textContent = 'Connected';
             elements.connectionStatus.querySelector('.status-dot').className = 'status-dot connected';
             elements.mainContent.style.display = 'block';
+            
+            // Show navigation tabs
+            const viewTabs = document.getElementById('viewTabs');
+            if (viewTabs) viewTabs.style.display = 'flex';
+            
             hideLoading();
         } catch (err) {
             console.error('Connection error:', err);
@@ -489,6 +685,10 @@ if (elements.categoryForm) {
             }
             
             await loadCategories();
+            // Also refresh transaction dropdowns if on categorize view
+            if (currentView === 'categorize') {
+                renderTransactions();
+            }
             elements.categoryModal.style.display = 'none';
             hideLoading();
         } catch (err) {
