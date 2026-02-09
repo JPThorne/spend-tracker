@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SpendTracker.Api.Middleware;
 using SpendTracker.Api.Services;
 using SpendTracker.Core.Interfaces;
 using SpendTracker.Infrastructure.Data;
@@ -25,12 +26,12 @@ builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 // Register services
 builder.Services.AddScoped<ICsvParsingService, CsvParsingService>();
 
-// Configure CORS for Blazor
+// Configure CORS - Allow all origins for now
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowBlazor", policy =>
+    options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins("https://localhost:5001", "http://localhost:5000")
+        policy.AllowAnyOrigin()
               .AllowAnyMethod()
               .AllowAnyHeader();
     });
@@ -50,7 +51,11 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseCors("AllowBlazor");
+app.UseCors("AllowAll");
+
+// Add API key authentication middleware
+app.UseApiKeyAuthentication();
+
 app.UseAuthorization();
 app.MapControllers();
 

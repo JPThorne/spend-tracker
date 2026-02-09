@@ -24,3 +24,14 @@ public record CsvUploadResultDto(
     Guid UploadBatchId,
     List<string> Errors
 );
+
+public record BulkCategorizeDto(
+    List<int> TransactionIds,
+    int CategoryId
+);
+
+public record BulkCategorizeResultDto(
+    int Processed,
+    int Failed,
+    List<string> Errors
+);

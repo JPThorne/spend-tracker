@@ -81,6 +81,27 @@ body {
     padding: 2rem;
 }
 
+/* Upload Section */
+.upload-section {
+    margin-bottom: 2rem;
+    padding: 1.5rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 2px dashed #dee2e6;
+}
+
+.upload-form {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.upload-form .input[type="file"] {
+    flex: 1;
+    min-width: 250px;
+}
+
 /* Category Section */
 .category-section {
     margin-bottom: 2rem;
@@ -120,6 +141,7 @@ body {
 }
 
 .category-badge {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     padding: 0.5rem 1rem;
     border-radius: 6px;
@@ -204,6 +226,16 @@ body {
     border-radius: 4px;
     font-size: 0.9rem;
     min-width: 150px;
+}
+
+.amount-debit {
+    color: #dc3545;
+    font-weight: 600;
+}
+
+.amount-credit {
+    color: #28a745;
+    font-weight: 600;
 }
 
 /* Pagination */

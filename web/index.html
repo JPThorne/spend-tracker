@@ -24,6 +24,17 @@
         </header>
 
         <main class="main-content" id="mainContent" style="display: none;">
+            <!-- CSV Upload Section -->
+            <section class="upload-section">
+                <div class="section-header">
+                    <h2>Upload Transactions</h2>
+                </div>
+                <div class="upload-form">
+                    <input type="file" id="csvFile" accept=".csv" class="input">
+                    <button id="uploadBtn" class="btn btn-primary">Upload CSV</button>
+                </div>
+            </section>
+
             <!-- Category Management Section -->
             <section class="category-section">
                 <div class="section-header">
@@ -52,9 +63,8 @@
                             <tr>
                                 <th><input type="checkbox" id="selectAll"></th>
                                 <th>Date</th>
-                                <th>Merchant</th>
+                                <th>Description</th>
                                 <th>Amount</th>
-                                <th>Country</th>
                                 <th>Category</th>
                                 <th>Actions</th>
                             </tr>
@@ -63,12 +73,6 @@
                             <!-- Transactions will be loaded here -->
                         </tbody>
                     </table>
-                </div>
-
-                <div class="pagination" id="pagination">
-                    <button id="prevBtn" class="btn btn-secondary" disabled>Previous</button>
-                    <span id="paginationInfo">0-0 of 0</span>
-                    <button id="nextBtn" class="btn btn-secondary" disabled>Next</button>
                 </div>
             </section>
         </main>
@@ -88,17 +92,12 @@
             </div>
             <form id="categoryForm">
                 <div class="form-group">
-                    <label for="categoryId">Category ID</label>
-                    <input type="text" id="categoryId" class="input" required pattern="[a-z0-9-]+" placeholder="e.g., groceries">
-                    <small>Lowercase letters, numbers, and hyphens only</small>
-                </div>
-                <div class="form-group">
                     <label for="categoryName">Category Name</label>
                     <input type="text" id="categoryName" class="input" required placeholder="e.g., Groceries & Food">
                 </div>
                 <div class="form-group">
-                    <label for="categoryColor">Color</label>
-                    <input type="color" id="categoryColor" class="input" required value="#4CAF50">
+                    <label for="categoryDescription">Description (Optional)</label>
+                    <textarea id="categoryDescription" class="input" placeholder="e.g., Food, groceries, and dining"></textarea>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>

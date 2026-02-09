@@ -32,7 +32,10 @@ public class CsvParsingService(ITransactionRepository transactionRepository) : I
                 TrimOptions = TrimOptions.Trim,
                 MissingFieldFound = null
             });
-
+            
+            // Skip the first line
+            await csv.ReadAsync();
+            
             // Read the header
             await csv.ReadAsync();
             csv.ReadHeader();

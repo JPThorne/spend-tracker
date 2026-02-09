@@ -1,11 +1,8 @@
 // API Client Configuration
-let API_URL = '';
+let API_URL = 'http://localhost:5062/api'; // Default to local .NET API
 let API_KEY = '';
 let categories = [];
 let transactions = [];
-let currentPage = 0;
-let totalTransactions = 0;
-const ITEMS_PER_PAGE = 50;
 let selectedTransactions = new Set();
 
 // DOM Elements
@@ -19,9 +16,6 @@ const elements = {
     loading: document.getElementById('loading'),
     categoryList: document.getElementById('categoryList'),
     transactionTableBody: document.getElementById('transactionTableBody'),
-    paginationInfo: document.getElementById('paginationInfo'),
-    prevBtn: document.getElementById('prevBtn'),
-    nextBtn: document.getElementById('nextBtn'),
     selectAll: document.getElementById('selectAll'),
     categorizeSelectedBtn: document.getElementById('categorizeSelectedBtn'),
     selectedCount: document.getElementById('selectedCount'),
@@ -30,36 +24,55 @@ const elements = {
     categoryForm: document.getElementById('categoryForm'),
     modalClose: document.getElementById('modalClose'),
     cancelBtn: document.getElementById('cancelBtn'),
-    categoryId: document.getElementById('categoryId'),
     categoryName: document.getElementById('categoryName'),
-    categoryColor: document.getElementById('categoryColor'),
+    categoryDescription: document.getElementById('categoryDescription'),
     modalTitle: document.getElementById('modalTitle'),
     bulkModal: document.getElementById('bulkModal'),
     bulkModalClose: document.getElementById('bulkModalClose'),
     bulkCategory: document.getElementById('bulkCategory'),
     bulkSaveBtn: document.getElementById('bulkSaveBtn'),
-    bulkCancelBtn: document.getElementById('bulkCancelBtn')
+    bulkCancelBtn: document.getElementById('bulkCancelBtn'),
+    uploadForm: document.getElementById('uploadForm'),
+    csvFileInput: document.getElementById('csvFile'),
+    uploadBtn: document.getElementById('uploadBtn')
 };
+
+// Set default API URL
+if (elements.apiUrl) {
+    elements.apiUrl.value = API_URL;
+}
 
 // API Helper Functions
 async function apiRequest(endpoint, method = 'GET', body = null) {
     const options = {
         method,
         headers: {
-            'Content-Type': 'application/json',
             'x-api-key': API_KEY
         }
     };
 
-    if (body) {
+    if (body && !(body instanceof FormData)) {
+        options.headers['Content-Type'] = 'application/json';
         options.body = JSON.stringify(body);
+    } else if (body instanceof FormData) {
+        options.body = body;
+        // Don't set Content-Type for FormData, browser will set it with boundary
     }
 
     const response = await fetch(`${API_URL}${endpoint}`, options);
     
+    if (response.status === 401) {
+        showError('Authentication failed. Please check your API key.');
+        return null;
+    }
+
+    if (response.status === 204) {
+        return null; // No content
+    }
+
     if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error || `HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(errorText || `HTTP error! status: ${response.status}`);
     }
 
     return await response.json();
@@ -67,8 +80,10 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
 
 async function loadCategories() {
     try {
-        const response = await apiRequest('/categories');
-        categories = response.categories || [];
+        const data = await apiRequest('/categories');
+        if (!data) return;
+        
+        categories = data;
         renderCategories();
         populateCategoryDropdowns();
     } catch (err) {
@@ -80,14 +95,14 @@ async function loadCategories() {
 async function loadTransactions() {
     try {
         showLoading();
-        const offset = currentPage * ITEMS_PER_PAGE;
-        const response = await apiRequest(`/export?limit=${ITEMS_PER_PAGE}&offset=${offset}`);
+        const data = await apiRequest('/transactions?uncategorized=true');
+        if (!data) {
+            hideLoading();
+            return;
+        }
         
-        transactions = response.items || [];
-        totalTransactions = response.total || 0;
-        
+        transactions = data;
         renderTransactions();
-        updatePagination();
         hideLoading();
     } catch (err) {
         console.error('Error loading transactions:', err);
@@ -98,21 +113,23 @@ async function loadTransactions() {
 
 // Rendering Functions
 function renderCategories() {
+    if (!elements.categoryList) return;
+    
     elements.categoryList.innerHTML = categories.map(cat => `
         <div class="category-card">
             <div class="category-info">
-                <div class="category-badge" style="background-color: ${cat.color}">
+                <div class="category-badge">
                     ${cat.name}
                 </div>
                 <div class="category-stats">
-                    ${cat.totalCount} transactions | ${formatCurrency(cat.totalAmount)}
+                    ${cat.transactionCount} transactions | ${formatCurrency(cat.totalSpending)}
                 </div>
             </div>
             <div class="category-actions">
-                <button class="btn-icon" onclick="editCategory('${cat.id}')" title="Edit">
+                <button class="btn-icon" onclick="editCategory(${cat.id})" title="Edit">
                     ✏️
                 </button>
-                <button class="btn-icon" onclick="deleteCategory('${cat.id}')" title="Delete">
+                <button class="btn-icon" onclick="deleteCategory(${cat.id})" title="Delete">
                     🗑️
                 </button>
             </div>
@@ -121,10 +138,12 @@ function renderCategories() {
 }
 
 function renderTransactions() {
+    if (!elements.transactionTableBody) return;
+    
     if (transactions.length === 0) {
         elements.transactionTableBody.innerHTML = `
             <tr>
-                <td colspan="7" style="text-align: center; padding: 2rem;">
+                <td colspan="6" style="text-align: center; padding: 2rem;">
                     No uncategorized transactions found.
                 </td>
             </tr>
@@ -132,24 +151,20 @@ function renderTransactions() {
         return;
     }
 
-    elements.transactionTableBody.innerHTML = transactions.map((item, index) => {
-        const transaction = item.data;
-        const merchantName = transaction.merchant?.name || 'Unknown Merchant';
-        const country = transaction.merchant?.country?.code || 'N/A';
-        const date = formatDate(transaction.dateTime);
-        const amount = formatCurrency(transaction.centsAmount);
+    elements.transactionTableBody.innerHTML = transactions.map(t => {
+        const date = formatDate(t.transactionDate);
+        const amount = formatAmount(t.debit, t.credit);
         
         return `
-            <tr data-filename="${item.filename}">
+            <tr data-id="${t.id}">
                 <td>
-                    <input type="checkbox" class="transaction-checkbox" data-filename="${item.filename}">
+                    <input type="checkbox" class="transaction-checkbox" data-id="${t.id}">
                 </td>
                 <td>${date}</td>
-                <td>${merchantName}</td>
+                <td>${t.description}</td>
                 <td>${amount}</td>
-                <td>${country}</td>
                 <td>
-                    <select class="category-select" data-filename="${item.filename}">
+                    <select class="category-select" data-id="${t.id}">
                         <option value="">-- Select --</option>
                         ${categories.map(cat => `
                             <option value="${cat.id}">${cat.name}</option>
@@ -157,7 +172,7 @@ function renderTransactions() {
                     </select>
                 </td>
                 <td>
-                    <button class="btn btn-sm btn-primary" onclick="categorizeSingle('${item.filename}')">
+                    <button class="btn btn-sm btn-primary" onclick="categorizeSingle(${t.id})">
                         Save
                     </button>
                 </td>
@@ -172,6 +187,8 @@ function renderTransactions() {
 }
 
 function populateCategoryDropdowns() {
+    if (!elements.bulkCategory) return;
+    
     const options = categories.map(cat => 
         `<option value="${cat.id}">${cat.name}</option>`
     ).join('');
@@ -179,35 +196,40 @@ function populateCategoryDropdowns() {
     elements.bulkCategory.innerHTML = `<option value="">-- Select a category --</option>${options}`;
 }
 
-function updatePagination() {
-    const start = totalTransactions === 0 ? 0 : currentPage * ITEMS_PER_PAGE + 1;
-    const end = Math.min((currentPage + 1) * ITEMS_PER_PAGE, totalTransactions);
-    
-    elements.paginationInfo.textContent = `${start}-${end} of ${totalTransactions}`;
-    elements.prevBtn.disabled = currentPage === 0;
-    elements.nextBtn.disabled = end >= totalTransactions;
-}
-
 function updateSelectedTransactions() {
     selectedTransactions.clear();
     document.querySelectorAll('.transaction-checkbox:checked').forEach(checkbox => {
-        selectedTransactions.add(checkbox.dataset.filename);
+        selectedTransactions.add(parseInt(checkbox.dataset.id));
     });
     
-    elements.selectedCount.textContent = selectedTransactions.size;
-    elements.categorizeSelectedBtn.disabled = selectedTransactions.size === 0;
+    if (elements.selectedCount) {
+        elements.selectedCount.textContent = selectedTransactions.size;
+    }
+    if (elements.categorizeSelectedBtn) {
+        elements.categorizeSelectedBtn.disabled = selectedTransactions.size === 0;
+    }
     
     // Update "select all" checkbox state
     const allCheckboxes = document.querySelectorAll('.transaction-checkbox');
     const checkedCheckboxes = document.querySelectorAll('.transaction-checkbox:checked');
-    elements.selectAll.checked = allCheckboxes.length > 0 && allCheckboxes.length === checkedCheckboxes.length;
+    if (elements.selectAll) {
+        elements.selectAll.checked = allCheckboxes.length > 0 && allCheckboxes.length === checkedCheckboxes.length;
+    }
 }
 
 // Utility Functions
-function formatCurrency(centsAmount) {
-    if (!centsAmount && centsAmount !== 0) return 'R 0.00';
-    const amount = centsAmount / 100;
+function formatCurrency(amount) {
+    if (!amount && amount !== 0) return 'R 0.00';
     return `R ${amount.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatAmount(debit, credit) {
+    if (debit && debit !== 0) {
+        return `<span class="amount-debit">-${formatCurrency(debit)}</span>`;
+    } else if (credit && credit !== 0) {
+        return `<span class="amount-credit">+${formatCurrency(credit)}</span>`;
+    }
+    return formatCurrency(0);
 }
 
 function formatDate(dateString) {
@@ -217,11 +239,15 @@ function formatDate(dateString) {
 }
 
 function showLoading() {
-    elements.loading.style.display = 'flex';
+    if (elements.loading) {
+        elements.loading.style.display = 'flex';
+    }
 }
 
 function hideLoading() {
-    elements.loading.style.display = 'none';
+    if (elements.loading) {
+        elements.loading.style.display = 'none';
+    }
 }
 
 function showError(message) {
@@ -229,10 +255,10 @@ function showError(message) {
 }
 
 function showSuccess(message) {
-    // Simple success notification
     const notification = document.createElement('div');
     notification.className = 'notification success';
     notification.textContent = message;
+    notification.style.cssText = 'position:fixed;top:20px;right:20px;background:#4CAF50;color:white;padding:1rem 2rem;border-radius:4px;z-index:10000;';
     document.body.appendChild(notification);
     
     setTimeout(() => {
@@ -241,18 +267,17 @@ function showSuccess(message) {
 }
 
 // Category Management Functions
-window.editCategory = function(categoryId) {
+window.editCategory = async function(categoryId) {
     const category = categories.find(c => c.id === categoryId);
     if (!category) return;
     
     elements.modalTitle.textContent = 'Edit Category';
-    elements.categoryId.value = category.id;
-    elements.categoryId.disabled = true; // Can't change ID
     elements.categoryName.value = category.name;
-    elements.categoryColor.value = category.color;
+    elements.categoryDescription.value = category.description || '';
     
     elements.categoryModal.style.display = 'flex';
     elements.categoryForm.dataset.mode = 'edit';
+    elements.categoryForm.dataset.id = categoryId;
 };
 
 window.deleteCategory = async function(categoryId) {
@@ -272,9 +297,9 @@ window.deleteCategory = async function(categoryId) {
 };
 
 // Categorization Functions
-window.categorizeSingle = async function(filename) {
-    const selectElement = document.querySelector(`select[data-filename="${filename}"]`);
-    const categoryId = selectElement.value;
+window.categorizeSingle = async function(transactionId) {
+    const selectElement = document.querySelector(`select[data-id="${transactionId}"]`);
+    const categoryId = parseInt(selectElement.value);
     
     if (!categoryId) {
         showError('Please select a category first');
@@ -283,18 +308,10 @@ window.categorizeSingle = async function(filename) {
     
     try {
         showLoading();
-        const response = await apiRequest('/categorize', 'POST', {
-            filename,
-            category: categoryId
+        await apiRequest(`/transactions/${transactionId}/category`, 'PUT', {
+            categoryId: categoryId
         });
         
-        // Update category stats
-        const categoryIndex = categories.findIndex(c => c.id === categoryId);
-        if (categoryIndex !== -1 && response.category) {
-            categories[categoryIndex] = response.category;
-        }
-        
-        // Reload data
         await loadCategories();
         await loadTransactions();
         showSuccess('Transaction categorized successfully!');
@@ -307,38 +324,30 @@ window.categorizeSingle = async function(filename) {
 };
 
 async function categorizeBulk() {
-    const categoryId = elements.bulkCategory.value;
+    const categoryId = parseInt(elements.bulkCategory.value);
     
     if (!categoryId) {
         showError('Please select a category');
         return;
     }
     
-    const items = Array.from(selectedTransactions).map(filename => ({
-        filename,
-        category: categoryId
-    }));
+    const transactionIds = Array.from(selectedTransactions);
     
     try {
         showLoading();
         elements.bulkModal.style.display = 'none';
         
-        const response = await apiRequest('/categorize-bulk', 'POST', items);
+        const result = await apiRequest('/transactions/bulk-categorize', 'POST', {
+            transactionIds: transactionIds,
+            categoryId: categoryId
+        });
         
-        // Update categories
-        if (response.categories) {
-            response.categories.forEach(updatedCat => {
-                const index = categories.findIndex(c => c.id === updatedCat.id);
-                if (index !== -1) {
-                    categories[index] = updatedCat;
-                }
-            });
+        if (result) {
+            selectedTransactions.clear();
+            await loadCategories();
+            await loadTransactions();
+            showSuccess(`${result.processed} transactions categorized successfully!`);
         }
-        
-        selectedTransactions.clear();
-        await loadCategories();
-        await loadTransactions();
-        showSuccess(`${response.processed} transactions categorized successfully!`);
         hideLoading();
     } catch (err) {
         console.error('Error in bulk categorization:', err);
@@ -347,111 +356,152 @@ async function categorizeBulk() {
     }
 }
 
-// Event Listeners
-elements.connectBtn.addEventListener('click', async () => {
-    API_URL = elements.apiUrl.value.trim();
-    API_KEY = elements.apiKey.value.trim();
-    
-    if (!API_URL || !API_KEY) {
-        showError('Please enter both API URL and API Key');
+// CSV Upload Function
+async function uploadCsv() {
+    const fileInput = elements.csvFileInput;
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        showError('Please select a CSV file');
         return;
     }
-    
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
     try {
         showLoading();
-        await loadCategories();
-        await loadTransactions();
+        const result = await apiRequest('/transactions/upload', 'POST', formData);
         
-        elements.statusText.textContent = 'Connected';
-        elements.connectionStatus.querySelector('.status-dot').className = 'status-dot connected';
-        elements.mainContent.style.display = 'block';
-        hideLoading();
-    } catch (err) {
-        console.error('Connection error:', err);
-        showError('Failed to connect: ' + err.message);
-        hideLoading();
-    }
-});
-
-elements.prevBtn.addEventListener('click', async () => {
-    if (currentPage > 0) {
-        currentPage--;
-        await loadTransactions();
-    }
-});
-
-elements.nextBtn.addEventListener('click', async () => {
-    if ((currentPage + 1) * ITEMS_PER_PAGE < totalTransactions) {
-        currentPage++;
-        await loadTransactions();
-    }
-});
-
-elements.selectAll.addEventListener('change', (e) => {
-    document.querySelectorAll('.transaction-checkbox').forEach(checkbox => {
-        checkbox.checked = e.target.checked;
-    });
-    updateSelectedTransactions();
-});
-
-elements.categorizeSelectedBtn.addEventListener('click', () => {
-    elements.bulkModal.style.display = 'flex';
-});
-
-elements.addCategoryBtn.addEventListener('click', () => {
-    elements.modalTitle.textContent = 'Add Category';
-    elements.categoryForm.reset();
-    elements.categoryId.disabled = false;
-    elements.categoryModal.style.display = 'flex';
-    elements.categoryForm.dataset.mode = 'add';
-});
-
-elements.modalClose.addEventListener('click', () => {
-    elements.categoryModal.style.display = 'none';
-});
-
-elements.cancelBtn.addEventListener('click', () => {
-    elements.categoryModal.style.display = 'none';
-});
-
-elements.bulkModalClose.addEventListener('click', () => {
-    elements.bulkModal.style.display = 'none';
-});
-
-elements.bulkCancelBtn.addEventListener('click', () => {
-    elements.bulkModal.style.display = 'none';
-});
-
-elements.bulkSaveBtn.addEventListener('click', categorizeBulk);
-
-elements.categoryForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const mode = elements.categoryForm.dataset.mode;
-    const id = elements.categoryId.value.trim();
-    const name = elements.categoryName.value.trim();
-    const color = elements.categoryColor.value;
-    
-    try {
-        showLoading();
-        
-        if (mode === 'edit') {
-            await apiRequest(`/categories/${id}`, 'PUT', { name, color });
-            showSuccess('Category updated successfully!');
-        } else {
-            await apiRequest('/categories', 'POST', { id, name, color });
-            showSuccess('Category created successfully!');
+        if (result) {
+            showSuccess(`Uploaded successfully! ${result.successfulImports} transactions imported.`);
+            fileInput.value = ''; // Clear file input
+            await loadTransactions();
         }
-        
-        await loadCategories();
-        elements.categoryModal.style.display = 'none';
         hideLoading();
     } catch (err) {
-        console.error('Error saving category:', err);
-        showError('Failed to save category: ' + err.message);
+        console.error('Error uploading CSV:', err);
+        showError('Failed to upload CSV: ' + err.message);
         hideLoading();
     }
-});
+}
+
+// Event Listeners
+if (elements.connectBtn) {
+    elements.connectBtn.addEventListener('click', async () => {
+        API_URL = elements.apiUrl.value.trim();
+        API_KEY = elements.apiKey.value.trim();
+        
+        if (!API_URL || !API_KEY) {
+            showError('Please enter both API URL and API Key');
+            return;
+        }
+
+        // Remove trailing slash from API URL if present
+        API_URL = API_URL.replace(/\/$/, '');
+        
+        try {
+            showLoading();
+            await loadCategories();
+            await loadTransactions();
+            
+            elements.statusText.textContent = 'Connected';
+            elements.connectionStatus.querySelector('.status-dot').className = 'status-dot connected';
+            elements.mainContent.style.display = 'block';
+            hideLoading();
+        } catch (err) {
+            console.error('Connection error:', err);
+            showError('Failed to connect: ' + err.message);
+            hideLoading();
+        }
+    });
+}
+
+if (elements.selectAll) {
+    elements.selectAll.addEventListener('change', (e) => {
+        document.querySelectorAll('.transaction-checkbox').forEach(checkbox => {
+            checkbox.checked = e.target.checked;
+        });
+        updateSelectedTransactions();
+    });
+}
+
+if (elements.categorizeSelectedBtn) {
+    elements.categorizeSelectedBtn.addEventListener('click', () => {
+        elements.bulkModal.style.display = 'flex';
+    });
+}
+
+if (elements.addCategoryBtn) {
+    elements.addCategoryBtn.addEventListener('click', () => {
+        elements.modalTitle.textContent = 'Add Category';
+        elements.categoryForm.reset();
+        elements.categoryModal.style.display = 'flex';
+        elements.categoryForm.dataset.mode = 'add';
+        delete elements.categoryForm.dataset.id;
+    });
+}
+
+if (elements.modalClose) {
+    elements.modalClose.addEventListener('click', () => {
+        elements.categoryModal.style.display = 'none';
+    });
+}
+
+if (elements.cancelBtn) {
+    elements.cancelBtn.addEventListener('click', () => {
+        elements.categoryModal.style.display = 'none';
+    });
+}
+
+if (elements.bulkModalClose) {
+    elements.bulkModalClose.addEventListener('click', () => {
+        elements.bulkModal.style.display = 'none';
+    });
+}
+
+if (elements.bulkCancelBtn) {
+    elements.bulkCancelBtn.addEventListener('click', () => {
+        elements.bulkModal.style.display = 'none';
+    });
+}
+
+if (elements.bulkSaveBtn) {
+    elements.bulkSaveBtn.addEventListener('click', categorizeBulk);
+}
+
+if (elements.categoryForm) {
+    elements.categoryForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const mode = elements.categoryForm.dataset.mode;
+        const name = elements.categoryName.value.trim();
+        const description = elements.categoryDescription.value.trim();
+        
+        try {
+            showLoading();
+            
+            if (mode === 'edit') {
+                const id = parseInt(elements.categoryForm.dataset.id);
+                await apiRequest(`/categories/${id}`, 'PUT', { name, description });
+                showSuccess('Category updated successfully!');
+            } else {
+                await apiRequest('/categories', 'POST', { name, description });
+                showSuccess('Category created successfully!');
+            }
+            
+            await loadCategories();
+            elements.categoryModal.style.display = 'none';
+            hideLoading();
+        } catch (err) {
+            console.error('Error saving category:', err);
+            showError('Failed to save category: ' + err.message);
+            hideLoading();
+        }
+    });
+}
+
+if (elements.uploadBtn) {
+    elements.uploadBtn.addEventListener('click', uploadCsv);
+}
 
 // Close modals when clicking outside
 window.addEventListener('click', (e) => {
