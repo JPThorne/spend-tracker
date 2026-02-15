@@ -21,7 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SpendTracker.Api\SpendTracker.Api.csproj" />
-    <ProjectReference Include="..\..\src\SpendTracker.Core\SpendTracker.Core.csproj" />
+    <ProjectReference Include="..\..\src\SpendTracker.Domain\SpendTracker.Domain.csproj" />
   </ItemGroup>
 
 </Project>

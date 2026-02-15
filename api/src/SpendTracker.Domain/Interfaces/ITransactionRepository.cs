@@ -1,6 +1,6 @@
-using SpendTracker.Core.Entities;
+using SpendTracker.Domain.Entities;
 
-namespace SpendTracker.Core.Interfaces;
+namespace SpendTracker.Domain.Interfaces;
 
 public interface ITransactionRepository : IRepository<Transaction>
 {

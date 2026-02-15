@@ -1,4 +1,4 @@
-namespace SpendTracker.Core.Entities;
+namespace SpendTracker.Domain.Entities;
 
 public class Transaction
 {

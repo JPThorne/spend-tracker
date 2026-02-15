@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using SpendTracker.Api.Models;
-using SpendTracker.Core.Entities;
-using SpendTracker.Core.Interfaces;
+using SpendTracker.Domain.Entities;
+using SpendTracker.Domain.Interfaces;
 
 namespace SpendTracker.Api.Controllers;
 

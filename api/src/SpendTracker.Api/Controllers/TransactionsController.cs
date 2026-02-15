@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using SpendTracker.Api.Models;
 using SpendTracker.Api.Services;
-using SpendTracker.Core.Interfaces;
+using SpendTracker.Domain.Interfaces;
 
 namespace SpendTracker.Api.Controllers;
 
@@ -20,7 +20,7 @@ public class TransactionsController(
         [FromQuery] DateTime? endDate = null,
         [FromQuery] bool uncategorized = false)
     {
-        IEnumerable<Core.Entities.Transaction> transactions;
+        IEnumerable<Domain.Entities.Transaction> transactions;
 
         if (categoryId.HasValue)
         {

@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using SpendTracker.Core.Entities;
+using SpendTracker.Domain.Entities;
 
 namespace SpendTracker.Infrastructure.Data;
 

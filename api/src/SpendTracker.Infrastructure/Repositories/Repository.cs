@@ -1,6 +1,6 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
-using SpendTracker.Core.Interfaces;
+using SpendTracker.Domain.Interfaces;
 using SpendTracker.Infrastructure.Data;
 
 namespace SpendTracker.Infrastructure.Repositories;

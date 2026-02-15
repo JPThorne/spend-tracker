@@ -2,8 +2,8 @@
 using System.Text;
 using Moq;
 using SpendTracker.Api.Services;
-using SpendTracker.Core.Entities;
-using SpendTracker.Core.Interfaces;
+using SpendTracker.Domain.Entities;
+using SpendTracker.Domain.Interfaces;
 
 namespace SpendTracker.Api.UnitTests;
 

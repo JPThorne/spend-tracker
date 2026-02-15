@@ -4,7 +4,7 @@ A .NET 10 application for tracking and categorizing banking transactions from CS
 
 ## Architecture
 
-- **SpendTracker.Core**: Domain entities and interfaces
+- **SpendTracker.Domain**: Domain entities and interfaces
 - **SpendTracker.Infrastructure**: Data access layer with EF Core and PostgreSQL
 - **SpendTracker.Api**: RESTful API built with ASP.NET Core
 - **SpendTracker.Blazor**: Blazor Web App UI

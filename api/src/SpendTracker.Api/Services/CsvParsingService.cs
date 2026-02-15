@@ -2,8 +2,8 @@ using System.Globalization;
 using CsvHelper;
 using CsvHelper.Configuration;
 using SpendTracker.Api.Models;
-using SpendTracker.Core.Entities;
-using SpendTracker.Core.Interfaces;
+using SpendTracker.Domain.Entities;
+using SpendTracker.Domain.Interfaces;
 
 namespace SpendTracker.Api.Services;
 

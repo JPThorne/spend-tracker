@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SpendTracker.Api.Middleware;
 using SpendTracker.Api.Services;
-using SpendTracker.Core.Interfaces;
+using SpendTracker.Domain.Interfaces;
 using SpendTracker.Infrastructure.Data;
 using SpendTracker.Infrastructure.Repositories;
 
