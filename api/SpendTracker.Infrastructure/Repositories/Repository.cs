@@ -7,43 +7,43 @@ namespace SpendTracker.Infrastructure.Repositories;
 
 public class Repository<T>(SpendTrackerDbContext context) : IRepository<T> where T : class
 {
-    protected readonly SpendTrackerDbContext _context = context;
+    protected readonly SpendTrackerDbContext Context = context;
 
     public virtual async Task<IEnumerable<T>> GetAllAsync()
     {
-        return await _context.Set<T>().ToListAsync();
+        return await Context.Set<T>().ToListAsync();
     }
 
     public virtual async Task<T?> GetByIdAsync(int id)
     {
-        return await _context.Set<T>().FindAsync(id);
+        return await Context.Set<T>().FindAsync(id);
     }
 
     public virtual async Task<T> AddAsync(T entity)
     {
-        await _context.Set<T>().AddAsync(entity);
+        await Context.Set<T>().AddAsync(entity);
         return entity;
     }
 
     public virtual async Task UpdateAsync(T entity)
     {
-        _context.Set<T>().Update(entity);
+        Context.Set<T>().Update(entity);
         await Task.CompletedTask;
     }
 
     public virtual async Task DeleteAsync(T entity)
     {
-        _context.Set<T>().Remove(entity);
+        Context.Set<T>().Remove(entity);
         await Task.CompletedTask;
     }
 
     public virtual async Task<bool> ExistsAsync(Expression<Func<T, bool>> predicate)
     {
-        return await _context.Set<T>().AnyAsync(predicate);
+        return await Context.Set<T>().AnyAsync(predicate);
     }
 
     public async Task<int> SaveChangesAsync()
     {
-        return await _context.SaveChangesAsync();
+        return await Context.SaveChangesAsync();
     }
 }

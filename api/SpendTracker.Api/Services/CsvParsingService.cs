@@ -14,8 +14,6 @@ public interface ICsvParsingService
 
 public class CsvParsingService(ITransactionRepository transactionRepository) : ICsvParsingService
 {
-    private readonly ITransactionRepository _transactionRepository = transactionRepository;
-
     public async Task<CsvUploadResultDto> ParseAndImportCsvAsync(Stream fileStream)
     {
         var uploadBatchId = Guid.NewGuid();
@@ -107,7 +105,7 @@ public class CsvParsingService(ITransactionRepository transactionRepository) : I
                     };
 
                     // Check for duplicates (exact match on all fields)
-                    var isDuplicate = await _transactionRepository.ExistsAsync(t =>
+                    var isDuplicate = await transactionRepository.ExistsAsync(t =>
                         t.TransactionDate.Date == transaction.TransactionDate.Date &&
                         t.Description == transaction.Description &&
                         t.Debit == transaction.Debit &&
@@ -134,8 +132,8 @@ public class CsvParsingService(ITransactionRepository transactionRepository) : I
             // Save all transactions
             if (transactions.Count > 0)
             {
-                await _transactionRepository.AddRangeAsync(transactions);
-                await _transactionRepository.SaveChangesAsync();
+                await transactionRepository.AddRangeAsync(transactions);
+                await transactionRepository.SaveChangesAsync();
             }
 
             return new CsvUploadResultDto(

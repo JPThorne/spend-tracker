@@ -13,11 +13,6 @@ public class TransactionsController(
     ICsvParsingService csvParsingService,
     ILogger<TransactionsController> logger) : ControllerBase
 {
-    private readonly ITransactionRepository _transactionRepository = transactionRepository;
-    private readonly ICategoryRepository _categoryRepository = categoryRepository;
-    private readonly ICsvParsingService _csvParsingService = csvParsingService;
-    private readonly ILogger<TransactionsController> _logger = logger;
-
     [HttpGet]
     public async Task<ActionResult<IEnumerable<TransactionDto>>> GetAllTransactions(
         [FromQuery] int? categoryId = null,
@@ -29,15 +24,15 @@ public class TransactionsController(
 
         if (categoryId.HasValue)
         {
-            transactions = await _transactionRepository.GetByCategoryIdAsync(categoryId.Value);
+            transactions = await transactionRepository.GetByCategoryIdAsync(categoryId.Value);
         }
         else if (startDate.HasValue && endDate.HasValue)
         {
-            transactions = await _transactionRepository.GetByDateRangeAsync(startDate.Value, endDate.Value);
+            transactions = await transactionRepository.GetByDateRangeAsync(startDate.Value, endDate.Value);
         }
         else
         {
-            transactions = await _transactionRepository.GetAllAsync();
+            transactions = await transactionRepository.GetAllAsync();
         }
 
         // Filter for uncategorized transactions if requested
@@ -62,10 +57,10 @@ public class TransactionsController(
         return Ok(transactionDtos);
     }
 
-    [HttpGet("{id}")]
+    [HttpGet("{id:int}")]
     public async Task<ActionResult<TransactionDto>> GetTransactionById(int id)
     {
-        var transaction = await _transactionRepository.GetByIdAsync(id);
+        var transaction = await transactionRepository.GetByIdAsync(id);
         
         if (transaction == null)
         {
@@ -103,8 +98,8 @@ public class TransactionsController(
 
         try
         {
-            using var stream = file.OpenReadStream();
-            var result = await _csvParsingService.ParseAndImportCsvAsync(stream);
+            await using var stream = file.OpenReadStream();
+            var result = await csvParsingService.ParseAndImportCsvAsync(stream);
             
             if (result.SuccessfulImports == 0)
             {
@@ -115,32 +110,32 @@ public class TransactionsController(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error uploading CSV file");
+            logger.LogError(ex, "Error uploading CSV file");
             return StatusCode(500, "An error occurred while processing the CSV file");
         }
     }
 
-    [HttpPut("{id}/category")]
+    [HttpPut("{id:int}/category")]
     public async Task<ActionResult<TransactionDto>> AssignCategory(int id, [FromBody] AssignCategoryDto assignDto)
     {
-        var transaction = await _transactionRepository.GetByIdAsync(id);
+        var transaction = await transactionRepository.GetByIdAsync(id);
         if (transaction == null)
         {
             return NotFound($"Transaction with ID {id} not found");
         }
 
-        var category = await _categoryRepository.GetByIdAsync(assignDto.CategoryId);
+        var category = await categoryRepository.GetByIdAsync(assignDto.CategoryId);
         if (category == null)
         {
             return NotFound($"Category with ID {assignDto.CategoryId} not found");
         }
 
         transaction.CategoryId = assignDto.CategoryId;
-        await _transactionRepository.UpdateAsync(transaction);
-        await _transactionRepository.SaveChangesAsync();
+        await transactionRepository.UpdateAsync(transaction);
+        await transactionRepository.SaveChangesAsync();
 
         // Reload to get category name
-        transaction = await _transactionRepository.GetByIdAsync(id);
+        transaction = await transactionRepository.GetByIdAsync(id);
 
         var transactionDto = new TransactionDto(
             transaction!.Id,
@@ -158,18 +153,18 @@ public class TransactionsController(
         return Ok(transactionDto);
     }
 
-    [HttpDelete("{id}/category")]
+    [HttpDelete("{id:int}/category")]
     public async Task<ActionResult<TransactionDto>> RemoveCategory(int id)
     {
-        var transaction = await _transactionRepository.GetByIdAsync(id);
+        var transaction = await transactionRepository.GetByIdAsync(id);
         if (transaction == null)
         {
             return NotFound($"Transaction with ID {id} not found");
         }
 
         transaction.CategoryId = null;
-        await _transactionRepository.UpdateAsync(transaction);
-        await _transactionRepository.SaveChangesAsync();
+        await transactionRepository.UpdateAsync(transaction);
+        await transactionRepository.SaveChangesAsync();
 
         var transactionDto = new TransactionDto(
             transaction.Id,
@@ -187,17 +182,17 @@ public class TransactionsController(
         return Ok(transactionDto);
     }
 
-    [HttpDelete("{id}")]
+    [HttpDelete("{id:int}")]
     public async Task<ActionResult> DeleteTransaction(int id)
     {
-        var transaction = await _transactionRepository.GetByIdAsync(id);
+        var transaction = await transactionRepository.GetByIdAsync(id);
         if (transaction == null)
         {
             return NotFound($"Transaction with ID {id} not found");
         }
 
-        await _transactionRepository.DeleteAsync(transaction);
-        await _transactionRepository.SaveChangesAsync();
+        await transactionRepository.DeleteAsync(transaction);
+        await transactionRepository.SaveChangesAsync();
 
         return NoContent();
     }
@@ -210,14 +205,14 @@ public class TransactionsController(
             year = DateTime.UtcNow.Year;
         }
 
-        var summary = await _transactionRepository.GetMonthlySpendingSummaryAsync(year);
+        var summary = await transactionRepository.GetMonthlySpendingSummaryAsync(year);
         return Ok(summary);
     }
 
-    [HttpDelete("batch/{uploadBatchId}")]
+    [HttpDelete("batch/{uploadBatchId:guid}")]
     public async Task<ActionResult<object>> DeleteBatch(Guid uploadBatchId)
     {
-        var transactions = await _transactionRepository.GetByUploadBatchIdAsync(uploadBatchId);
+        var transactions = await transactionRepository.GetByUploadBatchIdAsync(uploadBatchId);
         var transactionList = transactions.ToList();
         
         if (transactionList.Count == 0)
@@ -232,8 +227,8 @@ public class TransactionsController(
             .Where(n => n != null)
             .ToList();
 
-        var deletedCount = await _transactionRepository.DeleteByBatchIdAsync(uploadBatchId);
-        await _transactionRepository.SaveChangesAsync();
+        var deletedCount = await transactionRepository.DeleteByBatchIdAsync(uploadBatchId);
+        await transactionRepository.SaveChangesAsync();
 
         return Ok(new
         {
@@ -251,7 +246,7 @@ public class TransactionsController(
         }
 
         // Verify category exists
-        var category = await _categoryRepository.GetByIdAsync(bulkDto.CategoryId);
+        var category = await categoryRepository.GetByIdAsync(bulkDto.CategoryId);
         if (category == null)
         {
             return NotFound($"Category with ID {bulkDto.CategoryId} not found");
@@ -265,7 +260,7 @@ public class TransactionsController(
         {
             try
             {
-                var transaction = await _transactionRepository.GetByIdAsync(transactionId);
+                var transaction = await transactionRepository.GetByIdAsync(transactionId);
                 if (transaction == null)
                 {
                     failed++;
@@ -274,19 +269,19 @@ public class TransactionsController(
                 }
 
                 transaction.CategoryId = bulkDto.CategoryId;
-                await _transactionRepository.UpdateAsync(transaction);
+                await transactionRepository.UpdateAsync(transaction);
                 processed++;
             }
             catch (Exception ex)
             {
                 failed++;
                 errors.Add($"Error processing transaction ID {transactionId}: {ex.Message}");
-                _logger.LogError(ex, "Error categorizing transaction {TransactionId}", transactionId);
+                logger.LogError(ex, "Error categorizing transaction {TransactionId}", transactionId);
             }
         }
 
         // Save all changes at once
-        await _transactionRepository.SaveChangesAsync();
+        await transactionRepository.SaveChangesAsync();
 
         var result = new BulkCategorizeResultDto(processed, failed, errors);
         return Ok(result);

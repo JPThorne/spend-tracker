@@ -9,7 +9,7 @@ public class TransactionRepository(SpendTrackerDbContext context) : Repository<T
 {
     public async Task<IEnumerable<Transaction>> GetByCategoryIdAsync(int categoryId)
     {
-        return await _context.Transactions
+        return await Context.Transactions
             .Include(t => t.Category)
             .Where(t => t.CategoryId == categoryId)
             .OrderByDescending(t => t.TransactionDate)
@@ -18,7 +18,7 @@ public class TransactionRepository(SpendTrackerDbContext context) : Repository<T
 
     public async Task<IEnumerable<Transaction>> GetByUploadBatchIdAsync(Guid uploadBatchId)
     {
-        return await _context.Transactions
+        return await Context.Transactions
             .Include(t => t.Category)
             .Where(t => t.UploadBatchId == uploadBatchId)
             .OrderByDescending(t => t.TransactionDate)
@@ -27,7 +27,7 @@ public class TransactionRepository(SpendTrackerDbContext context) : Repository<T
 
     public async Task<IEnumerable<Transaction>> GetByDateRangeAsync(DateTime startDate, DateTime endDate)
     {
-        return await _context.Transactions
+        return await Context.Transactions
             .Include(t => t.Category)
             .Where(t => t.TransactionDate >= startDate && t.TransactionDate <= endDate)
             .OrderByDescending(t => t.TransactionDate)
@@ -36,24 +36,24 @@ public class TransactionRepository(SpendTrackerDbContext context) : Repository<T
 
     public async Task AddRangeAsync(IEnumerable<Transaction> transactions)
     {
-        await _context.Transactions.AddRangeAsync(transactions);
+        await Context.Transactions.AddRangeAsync(transactions);
     }
 
     public async Task<int> DeleteByBatchIdAsync(Guid uploadBatchId)
     {
-        var transactions = await _context.Transactions
+        var transactions = await Context.Transactions
             .Where(t => t.UploadBatchId == uploadBatchId)
             .ToListAsync();
         
         var count = transactions.Count;
-        _context.Transactions.RemoveRange(transactions);
+        Context.Transactions.RemoveRange(transactions);
         
         return count;
     }
 
     public async Task<Dictionary<string, decimal>> GetMonthlySpendingSummaryAsync(int year)
     {
-        var transactions = await _context.Transactions
+        var transactions = await Context.Transactions
             .Include(t => t.Category)
             .Where(t => t.TransactionDate.Year == year && t.Debit.HasValue && t.CategoryId.HasValue)
             .ToListAsync();
@@ -68,7 +68,7 @@ public class TransactionRepository(SpendTrackerDbContext context) : Repository<T
 
     public override async Task<IEnumerable<Transaction>> GetAllAsync()
     {
-        return await _context.Transactions
+        return await Context.Transactions
             .Include(t => t.Category)
             .OrderByDescending(t => t.TransactionDate)
             .ToListAsync();
@@ -76,7 +76,7 @@ public class TransactionRepository(SpendTrackerDbContext context) : Repository<T
 
     public override async Task<Transaction?> GetByIdAsync(int id)
     {
-        return await _context.Transactions
+        return await Context.Transactions
             .Include(t => t.Category)
             .FirstOrDefaultAsync(t => t.Id == id);
     }

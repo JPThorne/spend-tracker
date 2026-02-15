@@ -11,7 +11,6 @@ public class CategoriesController(
     ICategoryRepository categoryRepository,
     ILogger<CategoriesController> logger) : ControllerBase
 {
-    private readonly ICategoryRepository _categoryRepository = categoryRepository;
     private readonly ILogger<CategoriesController> _logger = logger;
 
     [HttpGet]
@@ -19,7 +18,7 @@ public class CategoriesController(
         [FromQuery] DateTime? startDate = null,
         [FromQuery] DateTime? endDate = null)
     {
-        var categories = await _categoryRepository.GetAllAsync();
+        var categories = await categoryRepository.GetAllAsync();
         
         var categoryDtos = categories.Select(c =>
         {
@@ -52,7 +51,7 @@ public class CategoriesController(
     [HttpGet("{id}")]
     public async Task<ActionResult<CategoryDto>> GetCategoryById(int id)
     {
-        var category = await _categoryRepository.GetByIdAsync(id);
+        var category = await categoryRepository.GetByIdAsync(id);
         
         if (category == null)
         {
@@ -77,13 +76,13 @@ public class CategoriesController(
         [FromQuery] DateTime? startDate = null,
         [FromQuery] DateTime? endDate = null)
     {
-        var category = await _categoryRepository.GetByIdAsync(id);
+        var category = await categoryRepository.GetByIdAsync(id);
         if (category == null)
         {
             return NotFound($"Category with ID {id} not found");
         }
 
-        var transactions = await _categoryRepository.GetTransactionsByCategoryIdAsync(id);
+        var transactions = await categoryRepository.GetTransactionsByCategoryIdAsync(id);
         
         // Filter by date range if provided
         if (startDate.HasValue)
@@ -114,20 +113,20 @@ public class CategoriesController(
     [HttpGet("{id}/spending")]
     public async Task<ActionResult<decimal>> GetCategorySpending(int id)
     {
-        var category = await _categoryRepository.GetByIdAsync(id);
+        var category = await categoryRepository.GetByIdAsync(id);
         if (category == null)
         {
             return NotFound($"Category with ID {id} not found");
         }
 
-        var totalSpending = await _categoryRepository.GetTotalSpendingByCategoryIdAsync(id);
+        var totalSpending = await categoryRepository.GetTotalSpendingByCategoryIdAsync(id);
         return Ok(totalSpending);
     }
 
     [HttpGet("{id}/spending/monthly")]
     public async Task<ActionResult<CategorySpendingDto>> GetCategoryMonthlySpending(int id, [FromQuery] int year)
     {
-        var category = await _categoryRepository.GetByIdAsync(id);
+        var category = await categoryRepository.GetByIdAsync(id);
         if (category == null)
         {
             return NotFound($"Category with ID {id} not found");
@@ -138,7 +137,7 @@ public class CategoriesController(
             year = DateTime.UtcNow.Year;
         }
 
-        var monthlyData = await _categoryRepository.GetMonthlySpendingByCategoryIdAsync(id, year);
+        var monthlyData = await categoryRepository.GetMonthlySpendingByCategoryIdAsync(id, year);
         
         var monthlyBreakdown = monthlyData.Select(kvp => new MonthlySpendingDto(
             year,
@@ -148,8 +147,8 @@ public class CategoriesController(
             0 // Transaction count can be added if needed
         )).ToList();
 
-        var totalSpending = await _categoryRepository.GetTotalSpendingByCategoryIdAsync(id);
-        var transactions = await _categoryRepository.GetTransactionsByCategoryIdAsync(id);
+        var totalSpending = await categoryRepository.GetTotalSpendingByCategoryIdAsync(id);
+        var transactions = await categoryRepository.GetTransactionsByCategoryIdAsync(id);
 
         var result = new CategorySpendingDto(
             category.Id,
@@ -166,7 +165,7 @@ public class CategoriesController(
     public async Task<ActionResult<CategoryDto>> CreateCategory([FromBody] CreateCategoryDto createDto)
     {
         // Check if category with same name already exists
-        var existing = await _categoryRepository.GetByNameAsync(createDto.Name);
+        var existing = await categoryRepository.GetByNameAsync(createDto.Name);
         if (existing != null)
         {
             return Conflict($"Category with name '{createDto.Name}' already exists");
@@ -179,8 +178,8 @@ public class CategoriesController(
             CreatedDate = DateTime.UtcNow
         };
 
-        await _categoryRepository.AddAsync(category);
-        await _categoryRepository.SaveChangesAsync();
+        await categoryRepository.AddAsync(category);
+        await categoryRepository.SaveChangesAsync();
 
         var categoryDto = new CategoryDto(
             category.Id,
@@ -197,14 +196,14 @@ public class CategoriesController(
     [HttpPut("{id}")]
     public async Task<ActionResult<CategoryDto>> UpdateCategory(int id, [FromBody] UpdateCategoryDto updateDto)
     {
-        var category = await _categoryRepository.GetByIdAsync(id);
+        var category = await categoryRepository.GetByIdAsync(id);
         if (category == null)
         {
             return NotFound($"Category with ID {id} not found");
         }
 
         // Check if another category with the same name exists
-        var existing = await _categoryRepository.GetByNameAsync(updateDto.Name);
+        var existing = await categoryRepository.GetByNameAsync(updateDto.Name);
         if (existing != null && existing.Id != id)
         {
             return Conflict($"Another category with name '{updateDto.Name}' already exists");
@@ -213,8 +212,8 @@ public class CategoriesController(
         category.Name = updateDto.Name;
         category.Description = updateDto.Description;
 
-        await _categoryRepository.UpdateAsync(category);
-        await _categoryRepository.SaveChangesAsync();
+        await categoryRepository.UpdateAsync(category);
+        await categoryRepository.SaveChangesAsync();
 
         var categoryDto = new CategoryDto(
             category.Id,
@@ -231,7 +230,7 @@ public class CategoriesController(
     [HttpDelete("{id}")]
     public async Task<ActionResult> DeleteCategory(int id)
     {
-        var category = await _categoryRepository.GetByIdAsync(id);
+        var category = await categoryRepository.GetByIdAsync(id);
         if (category == null)
         {
             return NotFound($"Category with ID {id} not found");
@@ -243,8 +242,8 @@ public class CategoriesController(
             return BadRequest($"Cannot delete category '{category.Name}' because it has {category.Transactions.Count} associated transactions. Please reassign or remove these transactions first.");
         }
 
-        await _categoryRepository.DeleteAsync(category);
-        await _categoryRepository.SaveChangesAsync();
+        await categoryRepository.DeleteAsync(category);
+        await categoryRepository.SaveChangesAsync();
 
         return NoContent();
     }
