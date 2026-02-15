@@ -21,7 +21,9 @@ public class CsvParsingService(ITransactionRepository transactionRepository) : I
         var uploadBatchId = Guid.NewGuid();
         var transactions = new List<Transaction>();
         var errors = new List<string>();
+        var duplicateWarnings = new List<string>();
         var totalRecords = 0;
+        var duplicatesSkipped = 0;
 
         try
         {
@@ -104,6 +106,23 @@ public class CsvParsingService(ITransactionRepository transactionRepository) : I
                         CreatedDate = DateTime.UtcNow
                     };
 
+                    // Check for duplicates (exact match on all fields)
+                    var isDuplicate = await _transactionRepository.ExistsAsync(t =>
+                        t.TransactionDate.Date == transaction.TransactionDate.Date &&
+                        t.Description == transaction.Description &&
+                        t.Debit == transaction.Debit &&
+                        t.Credit == transaction.Credit &&
+                        t.Balance == transaction.Balance
+                    );
+
+                    if (isDuplicate)
+                    {
+                        duplicatesSkipped++;
+                        var amount = debit.HasValue ? $"-R {debit.Value:F2}" : (credit.HasValue ? $"+R {credit.Value:F2}" : "R 0.00");
+                        duplicateWarnings.Add($"{transactionDate:yyyy-MM-dd} | {description} | {amount}");
+                        continue;
+                    }
+
                     transactions.Add(transaction);
                 }
                 catch (Exception ex)
@@ -122,15 +141,25 @@ public class CsvParsingService(ITransactionRepository transactionRepository) : I
             return new CsvUploadResultDto(
                 totalRecords,
                 transactions.Count,
-                totalRecords - transactions.Count,
+                totalRecords - transactions.Count - duplicatesSkipped,
+                duplicatesSkipped,
                 uploadBatchId,
-                errors
+                errors,
+                duplicateWarnings
             );
         }
         catch (Exception ex)
         {
             errors.Add($"Failed to parse CSV file: {ex.Message}");
-            return new CsvUploadResultDto(totalRecords, 0, totalRecords, uploadBatchId, errors);
+            return new CsvUploadResultDto(
+                totalRecords, 
+                0, 
+                totalRecords, 
+                0, 
+                uploadBatchId, 
+                errors, 
+                new List<string>()
+            );
         }
     }
 }

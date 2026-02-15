@@ -21,8 +21,10 @@ public record CsvUploadResultDto(
     int TotalRecords,
     int SuccessfulImports,
     int FailedImports,
+    int DuplicatesSkipped,
     Guid UploadBatchId,
-    List<string> Errors
+    List<string> Errors,
+    List<string> DuplicateWarnings
 );
 
 public record BulkCategorizeDto(

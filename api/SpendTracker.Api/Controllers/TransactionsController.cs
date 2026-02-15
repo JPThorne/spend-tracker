@@ -214,6 +214,34 @@ public class TransactionsController(
         return Ok(summary);
     }
 
+    [HttpDelete("batch/{uploadBatchId}")]
+    public async Task<ActionResult<object>> DeleteBatch(Guid uploadBatchId)
+    {
+        var transactions = await _transactionRepository.GetByUploadBatchIdAsync(uploadBatchId);
+        var transactionList = transactions.ToList();
+        
+        if (transactionList.Count == 0)
+        {
+            return NotFound($"No transactions found with batch ID {uploadBatchId}");
+        }
+
+        var categoriesAffected = transactionList
+            .Where(t => t.CategoryId.HasValue)
+            .Select(t => t.Category?.Name)
+            .Distinct()
+            .Where(n => n != null)
+            .ToList();
+
+        var deletedCount = await _transactionRepository.DeleteByBatchIdAsync(uploadBatchId);
+        await _transactionRepository.SaveChangesAsync();
+
+        return Ok(new
+        {
+            deletedCount = deletedCount,
+            categoriesAffected = categoriesAffected
+        });
+    }
+
     [HttpPost("bulk-categorize")]
     public async Task<ActionResult<BulkCategorizeResultDto>> BulkCategorize([FromBody] BulkCategorizeDto bulkDto)
     {

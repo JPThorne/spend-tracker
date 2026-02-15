@@ -676,6 +676,82 @@ body {
     border-radius: 6px;
 }
 
+/* Upload Result Modal */
+.upload-result-modal {
+    max-width: 600px;
+}
+
+.upload-result-body {
+    padding: 1.5rem;
+}
+
+.upload-result-section {
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 6px;
+    border-left: 4px solid;
+}
+
+.upload-result-section.success {
+    background: #d4edda;
+    border-color: #28a745;
+    color: #155724;
+}
+
+.upload-result-section.warning {
+    background: #fff3cd;
+    border-color: #ffc107;
+    color: #856404;
+}
+
+.upload-result-section.error {
+    background: #f8d7da;
+    border-color: #dc3545;
+    color: #721c24;
+}
+
+.upload-result-batch {
+    padding: 0.5rem;
+    text-align: center;
+    color: #6c757d;
+    font-family: monospace;
+    font-size: 0.85rem;
+}
+
+.duplicate-details summary,
+details summary {
+    cursor: pointer;
+    font-weight: 600;
+    margin-top: 0.5rem;
+    padding: 0.25rem 0;
+}
+
+.duplicate-details summary:hover,
+details summary:hover {
+    text-decoration: underline;
+}
+
+.duplicate-list,
+.error-list {
+    margin: 0.5rem 0 0 1.5rem;
+    padding: 0;
+}
+
+.duplicate-list li,
+.error-list li {
+    margin: 0.25rem 0;
+    font-size: 0.9rem;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: #c82333;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     body {

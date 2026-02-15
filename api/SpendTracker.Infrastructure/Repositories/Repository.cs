@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using SpendTracker.Core.Interfaces;
 using SpendTracker.Infrastructure.Data;
@@ -34,6 +35,11 @@ public class Repository<T>(SpendTrackerDbContext context) : IRepository<T> where
     {
         _context.Set<T>().Remove(entity);
         await Task.CompletedTask;
+    }
+
+    public virtual async Task<bool> ExistsAsync(Expression<Func<T, bool>> predicate)
+    {
+        return await _context.Set<T>().AnyAsync(predicate);
     }
 
     public async Task<int> SaveChangesAsync()

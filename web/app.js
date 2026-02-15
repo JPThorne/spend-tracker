@@ -187,6 +187,9 @@ function renderTransactions() {
                     <button class="btn btn-sm btn-primary" onclick="categorizeSingle(${t.id})">
                         Save
                     </button>
+                    <button class="btn btn-sm btn-secondary" onclick="deleteTransaction(${t.id})" title="Delete transaction">
+                        🗑️
+                    </button>
                 </td>
             </tr>
         `;
@@ -823,7 +826,8 @@ async function uploadCsv() {
         const result = await apiRequest('/transactions/upload', 'POST', formData);
         
         if (result) {
-            showSuccess(`Uploaded successfully! ${result.successfulImports} transactions imported.`);
+            // Display detailed upload result
+            showUploadResult(result);
             fileInput.value = ''; // Clear file input
             await loadTransactions();
         }
@@ -834,6 +838,127 @@ async function uploadCsv() {
         hideLoading();
     }
 }
+
+function showUploadResult(result) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'flex';
+    
+    const duplicateSection = result.duplicatesSkipped > 0 ? `
+        <div class="upload-result-section warning">
+            <strong>⚠️ Duplicates Skipped:</strong> ${result.duplicatesSkipped} transactions
+            ${result.duplicateWarnings.length > 0 ? `
+                <details class="duplicate-details">
+                    <summary>View duplicate transactions</summary>
+                    <ul class="duplicate-list">
+                        ${result.duplicateWarnings.map(w => `<li>${w}</li>`).join('')}
+                    </ul>
+                </details>
+            ` : ''}
+        </div>
+    ` : '';
+    
+    const errorSection = result.failedImports > 0 ? `
+        <div class="upload-result-section error">
+            <strong>❌ Failed:</strong> ${result.failedImports} transactions
+            ${result.errors.length > 0 ? `
+                <details>
+                    <summary>View errors</summary>
+                    <ul class="error-list">
+                        ${result.errors.map(e => `<li>${e}</li>`).join('')}
+                    </ul>
+                </details>
+            ` : ''}
+        </div>
+    ` : '';
+    
+    modal.innerHTML = `
+        <div class="modal-content upload-result-modal">
+            <div class="modal-header">
+                <h2>CSV Upload Complete</h2>
+                <button class="modal-close" onclick="this.closest('.modal').remove()">&times;</button>
+            </div>
+            <div class="upload-result-body">
+                <div class="upload-result-section success">
+                    <strong>✅ Successfully Imported:</strong> ${result.successfulImports} transactions
+                </div>
+                ${duplicateSection}
+                ${errorSection}
+                <div class="upload-result-batch">
+                    <small>Batch ID: ${result.uploadBatchId}</small>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Close</button>
+                ${result.successfulImports > 0 ? `
+                    <button class="btn btn-danger" onclick="deleteUploadBatch('${result.uploadBatchId}')">
+                        Delete This Upload
+                    </button>
+                ` : ''}
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+window.deleteUploadBatch = async function(uploadBatchId) {
+    if (!confirm('Are you sure you want to delete all transactions from this upload? This cannot be undone.')) {
+        return;
+    }
+    
+    try {
+        showLoading();
+        const result = await apiRequest(`/transactions/batch/${uploadBatchId}`, 'DELETE');
+        
+        if (result) {
+            // Close the modal
+            document.querySelectorAll('.upload-result-modal').forEach(m => m.closest('.modal').remove());
+            
+            showSuccess(`Deleted ${result.deletedCount} transactions`);
+            
+            // Reload data
+            await loadCategories();
+            await loadTransactions();
+            
+            if (currentView === 'categories') {
+                await applyDateFilter();
+            }
+        }
+        hideLoading();
+    } catch (err) {
+        console.error('Error deleting batch:', err);
+        showError('Failed to delete batch: ' + err.message);
+        hideLoading();
+    }
+};
+
+window.deleteTransaction = async function(transactionId) {
+    if (!confirm('Are you sure you want to delete this transaction?')) return;
+    
+    try {
+        showLoading();
+        await apiRequest(`/transactions/${transactionId}`, 'DELETE');
+        
+        // Reload data
+        await loadCategories();
+        await loadTransactions();
+        
+        if (currentView === 'categories') {
+            // Clear cache and reload category view
+            categoryTransactions = {};
+            expandedCategories.clear();
+            await applyDateFilter();
+        }
+        
+        showSuccess('Transaction deleted successfully!');
+        hideLoading();
+    } catch (err) {
+        console.error('Error deleting transaction:', err);
+        showError('Failed to delete transaction: ' + err.message);
+        hideLoading();
+    }
+};
 
 // Event Listeners
 if (elements.connectBtn) {
