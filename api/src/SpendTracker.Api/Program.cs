@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SpendTracker.Api.Middleware;
-using SpendTracker.Api.Services;
-using SpendTracker.Domain.Interfaces;
+using SpendTracker.Domain.Repositories;
+using SpendTracker.Domain.Services;
 using SpendTracker.Infrastructure.Data;
 using SpendTracker.Infrastructure.Repositories;
 
@@ -13,8 +13,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
 // Configure SQLite Database
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
-    ?? "Data Source=spendtracker.db";
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+                       ?? "Data Source=spendtracker.db";
 
 builder.Services.AddDbContext<SpendTrackerDbContext>(options =>
     options.UseSqlite(connectionString));
@@ -25,6 +25,8 @@ builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 
 // Register services
 builder.Services.AddScoped<ICsvParsingService, CsvParsingService>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<ITransactionService, TransactionService>();
 
 // Configure CORS - Allow all origins for now
 builder.Services.AddCors(options =>
@@ -32,8 +34,8 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowAll", policy =>
     {
         policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+            .AllowAnyMethod()
+            .AllowAnyHeader();
     });
 });
 

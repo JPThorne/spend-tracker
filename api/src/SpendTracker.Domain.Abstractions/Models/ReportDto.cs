@@ -1,4 +1,4 @@
-namespace SpendTracker.Api.Models;
+namespace SpendTracker.Domain.Models;
 
 public record MonthlySpendingDto(
     int Year,

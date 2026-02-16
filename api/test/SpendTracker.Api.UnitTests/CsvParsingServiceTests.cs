@@ -1,9 +1,9 @@
 ﻿using System.Linq.Expressions;
 using System.Text;
 using Moq;
-using SpendTracker.Api.Services;
 using SpendTracker.Domain.Entities;
-using SpendTracker.Domain.Interfaces;
+using SpendTracker.Domain.Repositories;
+using SpendTracker.Domain.Services;
 
 namespace SpendTracker.Api.UnitTests;
 

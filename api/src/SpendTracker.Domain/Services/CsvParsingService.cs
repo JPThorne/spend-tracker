@@ -1,16 +1,11 @@
 using System.Globalization;
 using CsvHelper;
 using CsvHelper.Configuration;
-using SpendTracker.Api.Models;
 using SpendTracker.Domain.Entities;
-using SpendTracker.Domain.Interfaces;
+using SpendTracker.Domain.Models;
+using SpendTracker.Domain.Repositories;
 
-namespace SpendTracker.Api.Services;
-
-public interface ICsvParsingService
-{
-    Task<CsvUploadResultDto> ParseAndImportCsvAsync(Stream fileStream);
-}
+namespace SpendTracker.Domain.Services;
 
 public class CsvParsingService(ITransactionRepository transactionRepository) : ICsvParsingService
 {
@@ -32,15 +27,13 @@ public class CsvParsingService(ITransactionRepository transactionRepository) : I
                 TrimOptions = TrimOptions.Trim,
                 MissingFieldFound = null
             });
-            
-            // Skip the first line
+
             await csv.ReadAsync();
-            
-            // Read the header
+
             await csv.ReadAsync();
             csv.ReadHeader();
 
-            int lineNumber = 1;
+            var lineNumber = 1;
             while (await csv.ReadAsync())
             {
                 lineNumber++;
@@ -54,22 +47,19 @@ public class CsvParsingService(ITransactionRepository transactionRepository) : I
                     var creditStr = csv.GetField("Credits");
                     var balanceStr = csv.GetField("Balance");
 
-                    // Parse transaction date
                     if (!DateTime.TryParse(transactionDateStr, out var transactionDate))
                     {
                         errors.Add($"Line {lineNumber}: Invalid transaction date '{transactionDateStr}'");
                         continue;
                     }
 
-                    // Parse amounts
                     decimal? debit = null;
                     if (!string.IsNullOrWhiteSpace(debitStr))
                     {
-                        // Remove any currency symbols or commas
                         debitStr = debitStr.Replace("$", "").Replace(",", "").Trim();
                         if (decimal.TryParse(debitStr, out var debitValue))
                         {
-                            debit = Math.Abs(debitValue); // Ensure positive value for debits
+                            debit = Math.Abs(debitValue);
                         }
                     }
 
@@ -79,7 +69,7 @@ public class CsvParsingService(ITransactionRepository transactionRepository) : I
                         creditStr = creditStr.Replace("$", "").Replace(",", "").Trim();
                         if (decimal.TryParse(creditStr, out var creditValue))
                         {
-                            credit = Math.Abs(creditValue); // Ensure positive value for credits
+                            credit = Math.Abs(creditValue);
                         }
                     }
 
@@ -104,7 +94,6 @@ public class CsvParsingService(ITransactionRepository transactionRepository) : I
                         CreatedDate = DateTime.UtcNow
                     };
 
-                    // Check for duplicates (exact match on all fields)
                     var isDuplicate = await transactionRepository.ExistsAsync(t =>
                         t.TransactionDate.Date == transaction.TransactionDate.Date &&
                         t.Description == transaction.Description &&
@@ -129,7 +118,6 @@ public class CsvParsingService(ITransactionRepository transactionRepository) : I
                 }
             }
 
-            // Save all transactions
             if (transactions.Count > 0)
             {
                 await transactionRepository.AddRangeAsync(transactions);
@@ -150,12 +138,12 @@ public class CsvParsingService(ITransactionRepository transactionRepository) : I
         {
             errors.Add($"Failed to parse CSV file: {ex.Message}");
             return new CsvUploadResultDto(
-                totalRecords, 
-                0, 
-                totalRecords, 
-                0, 
-                uploadBatchId, 
-                errors, 
+                totalRecords,
+                0,
+                totalRecords,
+                0,
+                uploadBatchId,
+                errors,
                 new List<string>()
             );
         }

@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="src/SpendTracker.Api/SpendTracker.Api.csproj" />
+  <Project Path="src/SpendTracker.Domain.Abstractions/SpendTracker.Domain.Abstractions.csproj" />
   <Project Path="src/SpendTracker.Domain/SpendTracker.Domain.csproj" />
   <Project Path="src/SpendTracker.Infrastructure/SpendTracker.Infrastructure.csproj" />
   <Project Path="test/SpendTracker.Api.UnitTests/SpendTracker.Api.UnitTests.csproj" />

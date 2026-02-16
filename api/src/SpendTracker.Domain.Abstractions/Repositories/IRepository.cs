@@ -1,6 +1,6 @@
 using System.Linq.Expressions;
 
-namespace SpendTracker.Domain.Interfaces;
+namespace SpendTracker.Domain.Repositories;
 
 public interface IRepository<T> where T : class
 {

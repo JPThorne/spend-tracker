@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SpendTracker.Domain.Entities;
-using SpendTracker.Domain.Interfaces;
+using SpendTracker.Domain.Repositories;
 using SpendTracker.Infrastructure.Data;
 
 namespace SpendTracker.Infrastructure.Repositories;

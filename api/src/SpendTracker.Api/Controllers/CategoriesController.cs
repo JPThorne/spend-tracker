@@ -1,14 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
-using SpendTracker.Api.Models;
-using SpendTracker.Domain.Entities;
-using SpendTracker.Domain.Interfaces;
+using SpendTracker.Domain.Models;
+using SpendTracker.Domain.Services;
 
 namespace SpendTracker.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
 public class CategoriesController(
-    ICategoryRepository categoryRepository,
+    ICategoryService categoryService,
     ILogger<CategoriesController> logger) : ControllerBase
 {
     private readonly ILogger<CategoriesController> _logger = logger;
@@ -18,232 +17,97 @@ public class CategoriesController(
         [FromQuery] DateTime? startDate = null,
         [FromQuery] DateTime? endDate = null)
     {
-        var categories = await categoryRepository.GetAllAsync();
-        
-        var categoryDtos = categories.Select(c =>
-        {
-            // Filter transactions by date range if provided
-            var transactions = c.Transactions.AsEnumerable();
-            if (startDate.HasValue)
-            {
-                transactions = transactions.Where(t => t.TransactionDate >= startDate.Value);
-            }
-            if (endDate.HasValue)
-            {
-                transactions = transactions.Where(t => t.TransactionDate <= endDate.Value);
-            }
-            
-            var transactionList = transactions.ToList();
-            
-            return new CategoryDto(
-                c.Id,
-                c.Name,
-                c.Description,
-                c.CreatedDate,
-                transactionList.Count,
-                transactionList.Where(t => t.Debit.HasValue).Sum(t => t.Debit!.Value)
-            );
-        });
-
-        return Ok(categoryDtos);
+        var result = await categoryService.GetAllAsync(startDate, endDate);
+        return Ok(result.Value);
     }
 
     [HttpGet("{id}")]
     public async Task<ActionResult<CategoryDto>> GetCategoryById(int id)
     {
-        var category = await categoryRepository.GetByIdAsync(id);
-        
-        if (category == null)
+        var result = await categoryService.GetByIdAsync(id);
+        if (!result.Success)
         {
-            return NotFound($"Category with ID {id} not found");
+            return NotFound(result.Error?.Message);
         }
 
-        var categoryDto = new CategoryDto(
-            category.Id,
-            category.Name,
-            category.Description,
-            category.CreatedDate,
-            category.Transactions.Count,
-            category.Transactions.Where(t => t.Debit.HasValue).Sum(t => t.Debit!.Value)
-        );
-
-        return Ok(categoryDto);
+        return Ok(result.Value);
     }
 
-    [HttpGet("{id}/transactions")]
+    [HttpGet("{id:int}/transactions")]
     public async Task<ActionResult<IEnumerable<TransactionDto>>> GetCategoryTransactions(
         int id,
         [FromQuery] DateTime? startDate = null,
         [FromQuery] DateTime? endDate = null)
     {
-        var category = await categoryRepository.GetByIdAsync(id);
-        if (category == null)
+        var result = await categoryService.GetTransactionsAsync(id, startDate, endDate);
+        if (!result.Success)
         {
-            return NotFound($"Category with ID {id} not found");
+            return NotFound(result.Error?.Message);
         }
 
-        var transactions = await categoryRepository.GetTransactionsByCategoryIdAsync(id);
-        
-        // Filter by date range if provided
-        if (startDate.HasValue)
-        {
-            transactions = transactions.Where(t => t.TransactionDate >= startDate.Value);
-        }
-        if (endDate.HasValue)
-        {
-            transactions = transactions.Where(t => t.TransactionDate <= endDate.Value);
-        }
-        
-        var transactionDtos = transactions.Select(t => new TransactionDto(
-            t.Id,
-            t.TransactionDate,
-            t.Description,
-            t.Debit,
-            t.Credit,
-            t.Balance,
-            t.CategoryId,
-            t.Category?.Name,
-            t.UploadBatchId,
-            t.CreatedDate
-        ));
-
-        return Ok(transactionDtos);
+        return Ok(result.Value);
     }
 
-    [HttpGet("{id}/spending")]
+    [HttpGet("{id:int}/spending")]
     public async Task<ActionResult<decimal>> GetCategorySpending(int id)
     {
-        var category = await categoryRepository.GetByIdAsync(id);
-        if (category == null)
+        var result = await categoryService.GetTotalSpendingAsync(id);
+        if (!result.Success)
         {
-            return NotFound($"Category with ID {id} not found");
+            return NotFound(result.Error?.Message);
         }
 
-        var totalSpending = await categoryRepository.GetTotalSpendingByCategoryIdAsync(id);
-        return Ok(totalSpending);
+        return Ok(result.Value);
     }
 
-    [HttpGet("{id}/spending/monthly")]
+    [HttpGet("{id:int}/spending/monthly")]
     public async Task<ActionResult<CategorySpendingDto>> GetCategoryMonthlySpending(int id, [FromQuery] int year)
     {
-        var category = await categoryRepository.GetByIdAsync(id);
-        if (category == null)
+        var result = await categoryService.GetMonthlySpendingAsync(id, year);
+        if (!result.Success)
         {
-            return NotFound($"Category with ID {id} not found");
+            return NotFound(result.Error?.Message);
         }
 
-        if (year == 0)
-        {
-            year = DateTime.UtcNow.Year;
-        }
-
-        var monthlyData = await categoryRepository.GetMonthlySpendingByCategoryIdAsync(id, year);
-        
-        var monthlyBreakdown = monthlyData.Select(kvp => new MonthlySpendingDto(
-            year,
-            kvp.Key,
-            new DateTime(year, kvp.Key, 1).ToString("MMMM"),
-            kvp.Value,
-            0 // Transaction count can be added if needed
-        )).ToList();
-
-        var totalSpending = await categoryRepository.GetTotalSpendingByCategoryIdAsync(id);
-        var transactions = await categoryRepository.GetTransactionsByCategoryIdAsync(id);
-
-        var result = new CategorySpendingDto(
-            category.Id,
-            category.Name,
-            totalSpending,
-            transactions.Count(),
-            monthlyBreakdown
-        );
-
-        return Ok(result);
+        return Ok(result.Value);
     }
 
     [HttpPost]
     public async Task<ActionResult<CategoryDto>> CreateCategory([FromBody] CreateCategoryDto createDto)
     {
-        // Check if category with same name already exists
-        var existing = await categoryRepository.GetByNameAsync(createDto.Name);
-        if (existing != null)
+        var result = await categoryService.CreateAsync(createDto);
+        if (!result.Success)
         {
-            return Conflict($"Category with name '{createDto.Name}' already exists");
+            return Conflict(result.Error?.Message);
         }
 
-        var category = new Category
-        {
-            Name = createDto.Name,
-            Description = createDto.Description,
-            CreatedDate = DateTime.UtcNow
-        };
-
-        await categoryRepository.AddAsync(category);
-        await categoryRepository.SaveChangesAsync();
-
-        var categoryDto = new CategoryDto(
-            category.Id,
-            category.Name,
-            category.Description,
-            category.CreatedDate,
-            0,
-            0
-        );
-
-        return CreatedAtAction(nameof(GetCategoryById), new { id = category.Id }, categoryDto);
+        return CreatedAtAction(nameof(GetCategoryById), new { id = result.Value!.Id }, result.Value);
     }
 
-    [HttpPut("{id}")]
+    [HttpPut("{id:int}")]
     public async Task<ActionResult<CategoryDto>> UpdateCategory(int id, [FromBody] UpdateCategoryDto updateDto)
     {
-        var category = await categoryRepository.GetByIdAsync(id);
-        if (category == null)
+        var result = await categoryService.UpdateAsync(id, updateDto);
+        if (!result.Success)
         {
-            return NotFound($"Category with ID {id} not found");
+            return result.Error?.Type == ServiceErrorType.NotFound
+                ? NotFound(result.Error?.Message)
+                : Conflict(result.Error?.Message);
         }
 
-        // Check if another category with the same name exists
-        var existing = await categoryRepository.GetByNameAsync(updateDto.Name);
-        if (existing != null && existing.Id != id)
-        {
-            return Conflict($"Another category with name '{updateDto.Name}' already exists");
-        }
-
-        category.Name = updateDto.Name;
-        category.Description = updateDto.Description;
-
-        await categoryRepository.UpdateAsync(category);
-        await categoryRepository.SaveChangesAsync();
-
-        var categoryDto = new CategoryDto(
-            category.Id,
-            category.Name,
-            category.Description,
-            category.CreatedDate,
-            category.Transactions.Count,
-            category.Transactions.Where(t => t.Debit.HasValue).Sum(t => t.Debit!.Value)
-        );
-
-        return Ok(categoryDto);
+        return Ok(result.Value);
     }
 
-    [HttpDelete("{id}")]
+    [HttpDelete("{id:int}")]
     public async Task<ActionResult> DeleteCategory(int id)
     {
-        var category = await categoryRepository.GetByIdAsync(id);
-        if (category == null)
+        var result = await categoryService.DeleteAsync(id);
+        if (!result.Success)
         {
-            return NotFound($"Category with ID {id} not found");
+            return result.Error?.Type == ServiceErrorType.NotFound
+                ? NotFound(result.Error?.Message)
+                : BadRequest(result.Error?.Message);
         }
-
-        // Check if category has transactions
-        if (category.Transactions.Count > 0)
-        {
-            return BadRequest($"Cannot delete category '{category.Name}' because it has {category.Transactions.Count} associated transactions. Please reassign or remove these transactions first.");
-        }
-
-        await categoryRepository.DeleteAsync(category);
-        await categoryRepository.SaveChangesAsync();
 
         return NoContent();
     }

@@ -1,4 +1,4 @@
-namespace SpendTracker.Api.Models;
+namespace SpendTracker.Domain.Models;
 
 public record TransactionDto(
     int Id,
@@ -25,6 +25,11 @@ public record CsvUploadResultDto(
     Guid UploadBatchId,
     List<string> Errors,
     List<string> DuplicateWarnings
+);
+
+public record CsvUploadRequest(
+    string FileName,
+    Stream FileStream
 );
 
 public record BulkCategorizeDto(
