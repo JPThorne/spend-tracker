@@ -17,5 +17,5 @@ k6 run tests/k6/api-smoke.js
 
 ## Example with env vars
 ```bash
-k6 run .\api-smoke.js --env API_BASE_URL=http://localhost:5062 --env API_KEY=b8f4e7a9-2c3d-4f5a-9e8b-1d2c3e4f5a6b
+k6 run .\api-smoke.js --env API_BASE_URL=http://localhost:5000 --env API_KEY=b8f4e7a9-2c3d-4f5a-9e8b-1d2c3e4f5a6b
 ```

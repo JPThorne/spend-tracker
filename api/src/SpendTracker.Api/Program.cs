@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.EntityFrameworkCore;
 using SpendTracker.Api.Middleware;
 using SpendTracker.Domain.Repositories;
@@ -52,6 +54,8 @@ if (app.Environment.IsDevelopment())
     app.UseDeveloperExceptionPage();
 }
 
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
 
@@ -61,4 +65,38 @@ app.UseApiKeyAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
+// Auto-launch browser on startup (only if not in development with hot reload)
+if (!app.Environment.IsDevelopment() || args.Length == 0)
+{
+    var url = "http://localhost:5000";
+    _ = Task.Run(async () =>
+    {
+        await Task.Delay(1500); // Give the server time to start
+        OpenBrowser(url);
+    });
+}
+
 app.Run();
+
+static void OpenBrowser(string url)
+{
+    try
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            Process.Start("xdg-open", url);
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            Process.Start("open", url);
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Unable to open browser: {ex.Message}");
+    }
+}
