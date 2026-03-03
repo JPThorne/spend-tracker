@@ -34,17 +34,22 @@ public class TransactionsController(
     }
 
     [HttpPost("upload")]
-    public async Task<ActionResult<CsvUploadResultDto>> UploadCsv(IFormFile file)
+    public async Task<ActionResult<CsvUploadResultDto>> UploadCsv(IFormFile file, [FromForm] string bankType)
     {
         if (file == null)
         {
             return BadRequest("No file uploaded");
         }
 
+        if (string.IsNullOrWhiteSpace(bankType))
+        {
+            return BadRequest("Bank type must be specified");
+        }
+
         try
         {
             await using var stream = file.OpenReadStream();
-            var result = await transactionService.UploadCsvAsync(new CsvUploadRequest(file.FileName, stream));
+            var result = await transactionService.UploadCsvAsync(new CsvUploadRequest(file.FileName, stream, bankType));
 
             if (!result.Success)
             {

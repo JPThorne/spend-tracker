@@ -29,7 +29,8 @@ public record CsvUploadResultDto(
 
 public record CsvUploadRequest(
     string FileName,
-    Stream FileStream
+    Stream FileStream,
+    string BankType
 );
 
 public record BulkCategorizeDto(

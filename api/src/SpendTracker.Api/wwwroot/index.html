@@ -31,6 +31,12 @@
                     <h2>Upload Transactions</h2>
                 </div>
                 <div class="upload-form">
+                    <select id="bankType" class="input" required>
+                        <option value="">-- Select Bank --</option>
+                        <option value="investec">Investec</option>
+                        <option value="absa">Absa</option>
+                        <option value="nedbank">Nedbank</option>
+                    </select>
                     <input type="file" id="csvFile" accept=".csv" class="input">
                     <button id="uploadBtn" class="btn btn-primary">Upload CSV</button>
                 </div>

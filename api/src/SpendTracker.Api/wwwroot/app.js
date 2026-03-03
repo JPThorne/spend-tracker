@@ -833,13 +833,21 @@ window.applyCustomDateRange = function() {
 // CSV Upload Function
 async function uploadCsv() {
     const fileInput = elements.csvFileInput;
+    const bankTypeSelect = document.getElementById('bankType');
+    
     if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
         showError('Please select a CSV file');
         return;
     }
 
+    if (!bankTypeSelect || !bankTypeSelect.value) {
+        showError('Please select a bank type');
+        return;
+    }
+
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
+    formData.append('bankType', bankTypeSelect.value);
 
     try {
         showLoading();
@@ -849,6 +857,7 @@ async function uploadCsv() {
             // Display detailed upload result
             showUploadResult(result);
             fileInput.value = ''; // Clear file input
+            bankTypeSelect.value = ''; // Clear bank type selection
             await loadTransactions();
         }
         hideLoading();

@@ -82,7 +82,12 @@ public class TransactionService(
             return ServiceResult<CsvUploadResultDto>.Fail(ServiceErrorType.Validation, "File must be a CSV file");
         }
 
-        var result = await csvParsingService.ParseAndImportCsvAsync(request.FileStream);
+        if (string.IsNullOrWhiteSpace(request.BankType))
+        {
+            return ServiceResult<CsvUploadResultDto>.Fail(ServiceErrorType.Validation, "Bank type must be specified");
+        }
+
+        var result = await csvParsingService.ParseAndImportCsvAsync(request.FileStream, request.BankType);
 
         if (result.SuccessfulImports == 0)
         {

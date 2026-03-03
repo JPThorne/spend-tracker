@@ -1,15 +1,13 @@
-using System.Globalization;
-using CsvHelper;
-using CsvHelper.Configuration;
 using SpendTracker.Domain.Entities;
 using SpendTracker.Domain.Models;
 using SpendTracker.Domain.Repositories;
+using SpendTracker.Domain.Services.CsvParsing;
 
 namespace SpendTracker.Domain.Services;
 
 public class CsvParsingService(ITransactionRepository transactionRepository) : ICsvParsingService
 {
-    public async Task<CsvUploadResultDto> ParseAndImportCsvAsync(Stream fileStream)
+    public async Task<CsvUploadResultDto> ParseAndImportCsvAsync(Stream fileStream, string bankType)
     {
         var uploadBatchId = Guid.NewGuid();
         var transactions = new List<Transaction>();
@@ -18,116 +16,66 @@ public class CsvParsingService(ITransactionRepository transactionRepository) : I
         var totalRecords = 0;
         var duplicatesSkipped = 0;
 
+        // Validate bank type
+        if (string.IsNullOrWhiteSpace(bankType) || !BankType.IsValid(bankType))
+        {
+            errors.Add($"Invalid bank type. Supported banks: {string.Join(", ", BankType.GetAll())}");
+            return new CsvUploadResultDto(0, 0, 0, 0, uploadBatchId, errors, new List<string>());
+        }
+
         try
         {
-            using var reader = new StreamReader(fileStream);
-            using var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
+            // Select appropriate parser based on bank type
+            ICsvParser parser = bankType.ToLowerInvariant() switch
             {
-                HasHeaderRecord = true,
-                TrimOptions = TrimOptions.Trim,
-                MissingFieldFound = null
-            });
+                BankType.Investec => new InvestecCsvParser(),
+                BankType.Absa => new AbsaCsvParser(),
+                BankType.Nedbank => new NedbankCsvParser(),
+                _ => throw new InvalidOperationException($"No parser found for bank type: {bankType}")
+            };
 
-            await csv.ReadAsync();
+            // Parse transactions using selected parser
+            transactions = await parser.ParseAsync(fileStream, uploadBatchId);
+            totalRecords = transactions.Count;
 
-            await csv.ReadAsync();
-            csv.ReadHeader();
-
-            var lineNumber = 1;
-            while (await csv.ReadAsync())
+            // Check for duplicates and filter them out
+            var transactionsToImport = new List<Transaction>();
+            
+            foreach (var transaction in transactions)
             {
-                lineNumber++;
-                totalRecords++;
+                var isDuplicate = await transactionRepository.ExistsAsync(t =>
+                    t.TransactionDate.Date == transaction.TransactionDate.Date &&
+                    t.Description == transaction.Description &&
+                    t.Debit == transaction.Debit &&
+                    t.Credit == transaction.Credit &&
+                    t.Balance == transaction.Balance
+                );
 
-                try
+                if (isDuplicate)
                 {
-                    var transactionDateStr = csv.GetField("Transaction Date");
-                    var description = csv.GetField("Description");
-                    var debitStr = csv.GetField("Debits");
-                    var creditStr = csv.GetField("Credits");
-                    var balanceStr = csv.GetField("Balance");
-
-                    if (!DateTime.TryParse(transactionDateStr, out var transactionDate))
-                    {
-                        errors.Add($"Line {lineNumber}: Invalid transaction date '{transactionDateStr}'");
-                        continue;
-                    }
-
-                    decimal? debit = null;
-                    if (!string.IsNullOrWhiteSpace(debitStr))
-                    {
-                        debitStr = debitStr.Replace("$", "").Replace(",", "").Trim();
-                        if (decimal.TryParse(debitStr, out var debitValue))
-                        {
-                            debit = Math.Abs(debitValue);
-                        }
-                    }
-
-                    decimal? credit = null;
-                    if (!string.IsNullOrWhiteSpace(creditStr))
-                    {
-                        creditStr = creditStr.Replace("$", "").Replace(",", "").Trim();
-                        if (decimal.TryParse(creditStr, out var creditValue))
-                        {
-                            credit = Math.Abs(creditValue);
-                        }
-                    }
-
-                    decimal? balance = null;
-                    if (!string.IsNullOrWhiteSpace(balanceStr))
-                    {
-                        balanceStr = balanceStr.Replace("$", "").Replace(",", "").Trim();
-                        if (decimal.TryParse(balanceStr, out var balanceValue))
-                        {
-                            balance = balanceValue;
-                        }
-                    }
-
-                    var transaction = new Transaction
-                    {
-                        TransactionDate = transactionDate,
-                        Description = description ?? "Unknown",
-                        Debit = debit,
-                        Credit = credit,
-                        Balance = balance,
-                        UploadBatchId = uploadBatchId,
-                        CreatedDate = DateTime.UtcNow
-                    };
-
-                    var isDuplicate = await transactionRepository.ExistsAsync(t =>
-                        t.TransactionDate.Date == transaction.TransactionDate.Date &&
-                        t.Description == transaction.Description &&
-                        t.Debit == transaction.Debit &&
-                        t.Credit == transaction.Credit &&
-                        t.Balance == transaction.Balance
-                    );
-
-                    if (isDuplicate)
-                    {
-                        duplicatesSkipped++;
-                        var amount = debit.HasValue ? $"-R {debit.Value:F2}" : (credit.HasValue ? $"+R {credit.Value:F2}" : "R 0.00");
-                        duplicateWarnings.Add($"{transactionDate:yyyy-MM-dd} | {description} | {amount}");
-                        continue;
-                    }
-
-                    transactions.Add(transaction);
+                    duplicatesSkipped++;
+                    var amount = transaction.Debit.HasValue 
+                        ? $"-R {transaction.Debit.Value:F2}" 
+                        : (transaction.Credit.HasValue ? $"+R {transaction.Credit.Value:F2}" : "R 0.00");
+                    duplicateWarnings.Add($"{transaction.TransactionDate:yyyy-MM-dd} | {transaction.Description} | {amount}");
                 }
-                catch (Exception ex)
+                else
                 {
-                    errors.Add($"Line {lineNumber}: {ex.Message}");
+                    transactionsToImport.Add(transaction);
                 }
             }
 
-            if (transactions.Count > 0)
+            // Import non-duplicate transactions
+            if (transactionsToImport.Count > 0)
             {
-                await transactionRepository.AddRangeAsync(transactions);
+                await transactionRepository.AddRangeAsync(transactionsToImport);
                 await transactionRepository.SaveChangesAsync();
             }
 
             return new CsvUploadResultDto(
                 totalRecords,
-                transactions.Count,
-                totalRecords - transactions.Count - duplicatesSkipped,
+                transactionsToImport.Count,
+                totalRecords - transactionsToImport.Count - duplicatesSkipped,
                 duplicatesSkipped,
                 uploadBatchId,
                 errors,

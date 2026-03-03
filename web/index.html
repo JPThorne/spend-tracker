@@ -9,21 +9,10 @@
 <body>
     <div class="container">
         <header class="header">
-            <h1>💰 Transaction Categorization</h1>
-            <div class="connection-panel" id="connectionPanel">
-                <div class="connection-form">
-                    <input type="text" id="apiUrl" placeholder="API URL (e.g., https://your-api.com)" class="input">
-                    <input type="password" id="apiKey" placeholder="Enter API Key" class="input">
-                    <button id="connectBtn" class="btn btn-primary">Connect</button>
-                </div>
-                <div class="connection-status" id="connectionStatus">
-                    <span class="status-dot disconnected"></span>
-                    <span id="statusText">Disconnected</span>
-                </div>
-            </div>
+            <h1>💰 Spend Tracker</h1>
             
             <!-- Navigation Tabs -->
-            <div class="view-tabs" id="viewTabs" style="display: none;">
+            <div class="view-tabs" id="viewTabs">
                 <button id="tabCategorize" class="tab-btn active" onclick="showCategorizeView()">
                     📋 Categorize Transactions
                 </button>
@@ -42,6 +31,12 @@
                     <h2>Upload Transactions</h2>
                 </div>
                 <div class="upload-form">
+                    <select id="bankType" class="input" required>
+                        <option value="">-- Select Bank --</option>
+                        <option value="investec">Investec</option>
+                        <option value="absa">Absa</option>
+                        <option value="nedbank">Nedbank</option>
+                    </select>
                     <input type="file" id="csvFile" accept=".csv" class="input">
                     <button id="uploadBtn" class="btn btn-primary">Upload CSV</button>
                 </div>

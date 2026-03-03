@@ -1,6 +1,6 @@
 // API Client Configuration
-let API_URL = 'http://localhost:5000/api'; // Default to local .NET API
-let API_KEY = '';
+let API_URL = 'http://localhost:5000/api'; // Local .NET API
+let API_KEY = 'b8f4e7a9-2c3d-4f5a-9e8b-1d2c3e4f5a6b'; // From appsettings.json
 let categories = [];
 let transactions = [];
 let selectedTransactions = new Set();
@@ -46,10 +46,30 @@ const elements = {
     uploadBtn: document.getElementById('uploadBtn')
 };
 
-// Set default API URL
-if (elements.apiUrl) {
-    elements.apiUrl.value = API_URL;
-}
+// Auto-connect on page load
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        showLoading();
+        await loadCategories();
+        await loadTransactions();
+        
+        // Hide connection panel, show main content
+        const connectionPanel = document.getElementById('connectionPanel');
+        if (connectionPanel) connectionPanel.style.display = 'none';
+        
+        if (elements.mainContent) elements.mainContent.style.display = 'block';
+        
+        // Show navigation tabs
+        const viewTabs = document.getElementById('viewTabs');
+        if (viewTabs) viewTabs.style.display = 'flex';
+        
+        hideLoading();
+    } catch (err) {
+        console.error('Connection error:', err);
+        showError('Failed to connect to local server: ' + err.message);
+        hideLoading();
+    }
+});
 
 // API Helper Functions
 async function apiRequest(endpoint, method = 'GET', body = null) {
@@ -813,13 +833,21 @@ window.applyCustomDateRange = function() {
 // CSV Upload Function
 async function uploadCsv() {
     const fileInput = elements.csvFileInput;
+    const bankTypeSelect = document.getElementById('bankType');
+    
     if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
         showError('Please select a CSV file');
         return;
     }
 
+    if (!bankTypeSelect || !bankTypeSelect.value) {
+        showError('Please select a bank type');
+        return;
+    }
+
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
+    formData.append('bankType', bankTypeSelect.value);
 
     try {
         showLoading();
@@ -829,6 +857,7 @@ async function uploadCsv() {
             // Display detailed upload result
             showUploadResult(result);
             fileInput.value = ''; // Clear file input
+            bankTypeSelect.value = ''; // Clear bank type selection
             await loadTransactions();
         }
         hideLoading();
@@ -961,41 +990,6 @@ window.deleteTransaction = async function(transactionId) {
 };
 
 // Event Listeners
-if (elements.connectBtn) {
-    elements.connectBtn.addEventListener('click', async () => {
-        API_URL = elements.apiUrl.value.trim();
-        API_KEY = elements.apiKey.value.trim();
-        
-        if (!API_URL || !API_KEY) {
-            showError('Please enter both API URL and API Key');
-            return;
-        }
-
-        // Remove trailing slash from API URL if present
-        API_URL = API_URL.replace(/\/$/, '');
-        
-        try {
-            showLoading();
-            await loadCategories();
-            await loadTransactions();
-            
-            elements.statusText.textContent = 'Connected';
-            elements.connectionStatus.querySelector('.status-dot').className = 'status-dot connected';
-            elements.mainContent.style.display = 'block';
-            
-            // Show navigation tabs
-            const viewTabs = document.getElementById('viewTabs');
-            if (viewTabs) viewTabs.style.display = 'flex';
-            
-            hideLoading();
-        } catch (err) {
-            console.error('Connection error:', err);
-            showError('Failed to connect: ' + err.message);
-            hideLoading();
-        }
-    });
-}
-
 if (elements.selectAll) {
     elements.selectAll.addEventListener('change', (e) => {
         document.querySelectorAll('.transaction-checkbox').forEach(checkbox => {
