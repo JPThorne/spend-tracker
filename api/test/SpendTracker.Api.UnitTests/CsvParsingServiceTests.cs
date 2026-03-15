@@ -40,7 +40,7 @@ public class CsvParsingServiceTests
             "2024-01-05,2024-01-06,Grocery Store,-125.50,,2874.50",
             "2024-01-15,2024-01-16,Salary Deposit,,3000.00,5713.75");
 
-        var result = await service.ParseAndImportCsvAsync(stream);
+        var result = await service.ParseAndImportCsvAsync(stream, "Nedbank");
 
         Assert.Equal(2, result.TotalRecords);
         Assert.Equal(2, result.SuccessfulImports);
@@ -81,7 +81,7 @@ public class CsvParsingServiceTests
             "2024-01-05,2024-01-06,Grocery Store,-125.50,,2874.50",
             "2024-01-05,2024-01-06,Grocery Store,-125.50,,2874.50");
 
-        var result = await service.ParseAndImportCsvAsync(stream);
+        var result = await service.ParseAndImportCsvAsync(stream, "Nedbank");
 
         Assert.Equal(2, result.TotalRecords);
         Assert.Equal(1, result.SuccessfulImports);
@@ -112,7 +112,7 @@ public class CsvParsingServiceTests
             HeaderLine,
             "not-a-date,2024-01-06,Grocery Store,-125.50,,2874.50");
 
-        var result = await service.ParseAndImportCsvAsync(stream);
+        var result = await service.ParseAndImportCsvAsync(stream, "Nedbank");
 
         Assert.Equal(1, result.TotalRecords);
         Assert.Equal(0, result.SuccessfulImports);
@@ -131,7 +131,7 @@ public class CsvParsingServiceTests
         var repository = new Mock<ITransactionRepository>(MockBehavior.Strict);
         var service = new CsvParsingService(repository.Object);
 
-        var result = await service.ParseAndImportCsvAsync(null!);
+        var result = await service.ParseAndImportCsvAsync(null!, "Nedbank");
 
         Assert.Equal(0, result.SuccessfulImports);
         Assert.Equal(0, result.DuplicatesSkipped);
@@ -157,7 +157,7 @@ public class CsvParsingServiceTests
             "not-a-date,2024-01-06,Grocery Store,-125.50,,2874.50",
             "also-bad,2024-01-06,Grocery Store,-125.50,,2874.50");
 
-        var result = await service.ParseAndImportCsvAsync(stream);
+        var result = await service.ParseAndImportCsvAsync(stream, "Nedbank");
 
         Assert.Equal(2, result.TotalRecords);
         Assert.Equal(0, result.SuccessfulImports);

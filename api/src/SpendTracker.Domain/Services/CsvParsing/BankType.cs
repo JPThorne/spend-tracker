@@ -8,7 +8,7 @@ public static class BankType
 
     public static bool IsValid(string bankType)
     {
-        return bankType switch
+        return bankType.ToLowerInvariant() switch
         {
             Investec => true,
             Absa => true,

@@ -34,7 +34,7 @@ public class TransactionServiceTests
 
         var service = new TransactionService(transactionRepo.Object, categoryRepo.Object, csvService.Object);
 
-        var result = await service.UploadCsvAsync(new CsvUploadRequest("file.csv", Stream.Null));
+        var result = await service.UploadCsvAsync(new CsvUploadRequest("file.csv", Stream.Null, "Nedbank"));
 
         Assert.False(result.Success);
         Assert.Equal(ServiceErrorType.Validation, result.Error?.Type);
