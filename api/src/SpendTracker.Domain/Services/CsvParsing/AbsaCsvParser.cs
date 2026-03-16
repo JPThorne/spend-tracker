@@ -41,7 +41,7 @@ public class AbsaCsvParser : ICsvParser
             }
 
             // Parse amount - negative is debit, positive is credit
-            if (!decimal.TryParse(amountStr, out var amount))
+            if (!decimal.TryParse(amountStr, CultureInfo.InvariantCulture, out var amount))
             {
                 throw new InvalidDataException($"Line {lineNumber}: Invalid amount '{amountStr}'");
             }
