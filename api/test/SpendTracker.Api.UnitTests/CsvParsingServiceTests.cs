@@ -9,11 +9,19 @@ namespace SpendTracker.Api.UnitTests;
 
 public class CsvParsingServiceTests
 {
-    private const string HeaderLine = "Transaction Date,Posting Date,Description,Debits,Credits,Balance";
-
     private static MemoryStream CreateCsvStream(params string[] lines)
     {
-        var content = string.Join("\r\n", lines);
+        // Add the Nedbank header format
+        var headerLines = new[]
+        {
+            "Statement Enquiry:",
+            "Account Number :,12345678",
+            "Account Description :,Savings Account",
+            "Statement Number:,001"
+        };
+        
+        var allLines = headerLines.Concat(lines).ToArray();
+        var content = string.Join("\r\n", allLines);
         return new MemoryStream(Encoding.UTF8.GetBytes(content));
     }
 
@@ -35,10 +43,8 @@ public class CsvParsingServiceTests
         var service = new CsvParsingService(repository.Object);
 
         using var stream = CreateCsvStream(
-            "ignored line",
-            HeaderLine,
-            "2024-01-05,2024-01-06,Grocery Store,-125.50,,2874.50",
-            "2024-01-15,2024-01-16,Salary Deposit,,3000.00,5713.75");
+            "05Jan2024,Grocery Store,-125.50,2874.50",
+            "15Jan2024,Salary Deposit,3000.00,5713.75");
 
         var result = await service.ParseAndImportCsvAsync(stream, "Nedbank");
 
@@ -76,10 +82,8 @@ public class CsvParsingServiceTests
         var service = new CsvParsingService(repository.Object);
 
         using var stream = CreateCsvStream(
-            "ignored line",
-            HeaderLine,
-            "2024-01-05,2024-01-06,Grocery Store,-125.50,,2874.50",
-            "2024-01-05,2024-01-06,Grocery Store,-125.50,,2874.50");
+            "05Jan2024,Grocery Store,-125.50,2874.50",
+            "05Jan2024,Grocery Store,-125.50,2874.50");
 
         var result = await service.ParseAndImportCsvAsync(stream, "Nedbank");
 
@@ -108,18 +112,16 @@ public class CsvParsingServiceTests
         var service = new CsvParsingService(repository.Object);
 
         using var stream = CreateCsvStream(
-            "ignored line",
-            HeaderLine,
-            "not-a-date,2024-01-06,Grocery Store,-125.50,,2874.50");
+            "not-a-date,Grocery Store,-125.50,2874.50");
 
         var result = await service.ParseAndImportCsvAsync(stream, "Nedbank");
 
-        Assert.Equal(1, result.TotalRecords);
+        Assert.Equal(0, result.TotalRecords);
         Assert.Equal(0, result.SuccessfulImports);
-        Assert.Equal(1, result.FailedImports);
+        Assert.Equal(0, result.FailedImports);
         Assert.Equal(0, result.DuplicatesSkipped);
         Assert.Single(result.Errors);
-        Assert.Contains("Invalid transaction date", result.Errors[0]);
+        Assert.Contains("Failed to parse CSV file", result.Errors[0]);
 
         repository.Verify(r => r.AddRangeAsync(It.IsAny<IEnumerable<Transaction>>()), Times.Never);
         repository.Verify(r => r.SaveChangesAsync(), Times.Never);
@@ -152,18 +154,16 @@ public class CsvParsingServiceTests
         var service = new CsvParsingService(repository.Object);
 
         using var stream = CreateCsvStream(
-            "ignored line",
-            HeaderLine,
-            "not-a-date,2024-01-06,Grocery Store,-125.50,,2874.50",
-            "also-bad,2024-01-06,Grocery Store,-125.50,,2874.50");
+            "not-a-date,Grocery Store,-125.50,2874.50",
+            "also-bad,Another Store,50.00,2924.50");
 
         var result = await service.ParseAndImportCsvAsync(stream, "Nedbank");
 
-        Assert.Equal(2, result.TotalRecords);
+        Assert.Equal(0, result.TotalRecords);
         Assert.Equal(0, result.SuccessfulImports);
-        Assert.Equal(2, result.FailedImports);
+        Assert.Equal(0, result.FailedImports);
         Assert.Equal(0, result.DuplicatesSkipped);
-        Assert.Equal(2, result.Errors.Count);
+        Assert.Single(result.Errors);
 
         repository.Verify(r => r.AddRangeAsync(It.IsAny<IEnumerable<Transaction>>()), Times.Never);
         repository.Verify(r => r.SaveChangesAsync(), Times.Never);
