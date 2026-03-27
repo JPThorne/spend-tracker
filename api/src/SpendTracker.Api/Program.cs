@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.EntityFrameworkCore;
+using SpendTracker.Api;
 using SpendTracker.Api.Middleware;
 using SpendTracker.Domain.Repositories;
 using SpendTracker.Domain.Services;
@@ -65,38 +66,22 @@ app.UseApiKeyAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// Auto-launch browser on startup (only if not in development with hot reload)
-if (!app.Environment.IsDevelopment() || args.Length == 0)
+// Run the application with system tray support on Windows
+if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 {
-    var url = "http://localhost:5000";
-    _ = Task.Run(async () =>
-    {
-        await Task.Delay(1500); // Give the server time to start
-        OpenBrowser(url);
-    });
+    // Initialize Windows Forms
+    System.Windows.Forms.Application.EnableVisualStyles();
+    System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
+    
+    // Create the tray application context with the web host
+    var appUrl = "http://localhost:5000";
+    var context = new TrayApplicationContext(appUrl, app);
+    
+    // Run the Windows Forms message loop
+    System.Windows.Forms.Application.Run(context);
 }
-
-app.Run();
-
-static void OpenBrowser(string url)
+else
 {
-    try
-    {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-        {
-            Process.Start("xdg-open", url);
-        }
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-        {
-            Process.Start("open", url);
-        }
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Unable to open browser: {ex.Message}");
-    }
+    // On non-Windows platforms, just run normally
+    await app.RunAsync();
 }
