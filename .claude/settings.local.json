@@ -1,0 +1,58 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build *)",
+      "Bash(dotnet run *)",
+      "Bash(dotnet publish *)",
+      "Bash(dotnet test *)",
+      "Bash(dotnet watch *)",
+
+      "Bash(dotnet add package *)",
+      "Bash(dotnet remove package *)",
+      "Bash(dotnet restore)",
+
+      "Bash(dotnet new *)",
+      "Bash(dotnet ef migrations *)",    
+      "Bash(dotnet ef database *)", 
+
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(git branch *)",
+      "Bash(git stash *)",
+
+      "Bash(mkdir *)",
+      "Bash(touch *)",
+      "Bash(mv *)",
+      "Bash(cp *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+
+      "Bash(* --version)",
+      "Bash(* --help *)",
+      "Bash(dotnet --info)",
+
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(npx *)",
+
+      "WebFetch(domain:docs.microsoft.com)",
+      "WebFetch(domain:learn.microsoft.com)",
+      "WebFetch(domain:nuget.org)"
+    ],
+    "deny": [
+      "Bash(git push --force *)",
+      "Bash(git reset --hard *)",
+
+      "Bash(curl *)",
+      "Bash(wget *)"
+    ]
+  }
+}
