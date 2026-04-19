@@ -11,7 +11,7 @@ public class ApiKeyAuthenticationMiddleware(
     {
         // Skip authentication for certain paths (e.g., health checks, swagger)
         var path = context.Request.Path.Value?.ToLower() ?? "";
-        if (path.Contains("/health") || path.Contains("/swagger"))
+        if (path.Contains("/health") || path.Contains("/swagger") || path.Contains("/info"))
         {
             await next(context);
             return;

@@ -76,7 +76,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const el = document.getElementById('appVersion');
             if (el) el.textContent = `SpendTracker v${info.version}`;
         }
-    } catch { /* version display is non-critical */ }
+    } catch (err) {
+        console.error('Failed to load app version:', err);
+    }
 });
 
 // API Helper Functions
