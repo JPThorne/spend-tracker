@@ -1,3 +1,4 @@
+using AutoUpdaterDotNET;
 using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
@@ -10,43 +11,75 @@ public class SystemTrayManager : IDisposable
     private readonly NotifyIcon _notifyIcon;
     private readonly string _appUrl;
     private readonly TrayApplicationContext _context;
+    private readonly UserPreferences _prefs;
+    private readonly string _manifestUrl;
+    private readonly System.Windows.Forms.Timer? _updateTimer;
     private bool _disposed;
 
-    public SystemTrayManager(string appUrl, TrayApplicationContext context)
+    public SystemTrayManager(string appUrl, TrayApplicationContext context, UserPreferences prefs, string manifestUrl)
     {
         _appUrl = appUrl;
         _context = context;
+        _prefs = prefs;
+        _manifestUrl = manifestUrl;
 
         _notifyIcon = new NotifyIcon
         {
-            // Use a simple built-in icon (we can create a custom one later)
             Icon = SystemIcons.Application,
             Visible = true,
             Text = "SpendTracker - Personal Finance Tracker"
         };
 
-        // Create context menu
         var contextMenu = new ContextMenuStrip();
-        
+
         var openItem = new ToolStripMenuItem("Open SpendTracker", null, OnOpen);
         openItem.Font = new Font(openItem.Font, FontStyle.Bold);
         contextMenu.Items.Add(openItem);
-        
+
+        contextMenu.Items.Add(new ToolStripSeparator());
+
+        var autoUpdateItem = new ToolStripMenuItem("Auto-Updates")
+        {
+            Checked = _prefs.AutoUpdateEnabled,
+            CheckOnClick = true
+        };
+        autoUpdateItem.Click += (s, e) =>
+        {
+            _prefs.AutoUpdateEnabled = autoUpdateItem.Checked;
+            _prefs.Save();
+        };
+        contextMenu.Items.Add(autoUpdateItem);
+
         contextMenu.Items.Add(new ToolStripSeparator());
         contextMenu.Items.Add(new ToolStripMenuItem("Exit", null, OnExit));
 
         _notifyIcon.ContextMenuStrip = contextMenu;
-        
-        // Double-click to open
         _notifyIcon.DoubleClick += (s, e) => OnOpen(s, e);
 
-        // Show startup notification
         _notifyIcon.ShowBalloonTip(
             3000,
             "SpendTracker Running",
             "Click the icon to open the application",
             ToolTipIcon.Info
         );
+
+        if (!string.IsNullOrEmpty(_manifestUrl))
+        {
+            // Initial check after 30 seconds, then every hour
+            _updateTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
+            _updateTimer.Tick += OnUpdateTimerTick;
+            _updateTimer.Start();
+        }
+    }
+
+    private void OnUpdateTimerTick(object? sender, EventArgs e)
+    {
+        _updateTimer!.Interval = 3_600_000;
+        if (_prefs.AutoUpdateEnabled)
+        {
+            AutoUpdater.ReportErrors = false;
+            AutoUpdater.Start(_manifestUrl);
+        }
     }
 
     private void OnOpen(object? sender, EventArgs e)
@@ -86,11 +119,13 @@ public class SystemTrayManager : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        
+
+        _updateTimer?.Stop();
+        _updateTimer?.Dispose();
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _disposed = true;
-        
+
         GC.SuppressFinalize(this);
     }
 }

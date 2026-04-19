@@ -1,58 +1,19 @@
 {
   "permissions": {
     "allow": [
+      "Bash(git -C /c/Dev/spend-tracker log --oneline --all -- api/src/SpendTracker.Api/wwwroot/ web/)",
+      "Bash(git -C /c/Dev/spend-tracker log --oneline --all --follow -- api/src/SpendTracker.Api/wwwroot/)",
+      "Bash(git -C /c/Dev/spend-tracker log --oneline --all --follow -- web/)",
+      "Bash(git -C /c/Dev/spend-tracker show 0c1b08f --stat)",
+      "Bash(git -C /c/Dev/spend-tracker log --pretty=format:\"%H %s\" --all)",
+      "Bash(git -C /c/Dev/spend-tracker log --all --oneline --name-status -- web/ api/src/SpendTracker.Api/wwwroot/)",
+      "Bash(git -C /c/Dev/spend-tracker show f764044:web/app.js)",
+      "Bash(git -C /c/Dev/spend-tracker show f764044:api/src/SpendTracker.Api/wwwroot/app.js)",
+      "Bash(git *)",
+      "WebSearch",
+      "Bash(dotnet restore *)",
       "Bash(dotnet build *)",
-      "Bash(dotnet run *)",
-      "Bash(dotnet publish *)",
-      "Bash(dotnet test *)",
-      "Bash(dotnet watch *)",
-
-      "Bash(dotnet add package *)",
-      "Bash(dotnet remove package *)",
-      "Bash(dotnet restore)",
-
-      "Bash(dotnet new *)",
-      "Bash(dotnet ef migrations *)",    
-      "Bash(dotnet ef database *)", 
-
-      "Bash(git status)",
-      "Bash(git diff *)",
-      "Bash(git log *)",
-      "Bash(git add *)",
-      "Bash(git commit *)",
-      "Bash(git checkout *)",
-      "Bash(git fetch *)",
-      "Bash(git pull *)",
-      "Bash(git branch *)",
-      "Bash(git stash *)",
-
-      "Bash(mkdir *)",
-      "Bash(touch *)",
-      "Bash(mv *)",
-      "Bash(cp *)",
-      "Bash(ls *)",
-      "Bash(cat *)",
-      "Bash(find *)",
-      "Bash(grep *)",
-
-      "Bash(* --version)",
-      "Bash(* --help *)",
-      "Bash(dotnet --info)",
-
-      "Bash(npm install *)",
-      "Bash(npm run *)",
-      "Bash(npx *)",
-
-      "WebFetch(domain:docs.microsoft.com)",
-      "WebFetch(domain:learn.microsoft.com)",
-      "WebFetch(domain:nuget.org)"
-    ],
-    "deny": [
-      "Bash(git push --force *)",
-      "Bash(git reset --hard *)",
-
-      "Bash(curl *)",
-      "Bash(wget *)"
+      "Bash(dotnet test *)"
     ]
   }
 }

@@ -7,12 +7,9 @@ public class TrayApplicationContext : ApplicationContext
     private readonly SystemTrayManager _trayManager;
     private readonly Task _webAppTask;
 
-    public TrayApplicationContext(string appUrl, IHost webHost)
+    public TrayApplicationContext(string appUrl, IHost webHost, UserPreferences prefs, string manifestUrl)
     {
-        // Create the system tray manager
-        _trayManager = new SystemTrayManager(appUrl, this);
-
-        // Start the web application in the background
+        _trayManager = new SystemTrayManager(appUrl, this, prefs, manifestUrl);
         _webAppTask = webHost.RunAsync();
     }
 

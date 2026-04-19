@@ -75,7 +75,9 @@ if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
     
     // Create the tray application context with the web host
     var appUrl = "http://localhost:5000";
-    var context = new TrayApplicationContext(appUrl, app);
+    var prefs = UserPreferences.Load();
+    var manifestUrl = app.Configuration["UpdateManifestUrl"] ?? string.Empty;
+    var context = new TrayApplicationContext(appUrl, app, prefs, manifestUrl);
     
     // Run the Windows Forms message loop
     System.Windows.Forms.Application.Run(context);
