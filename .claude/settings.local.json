@@ -13,7 +13,10 @@
       "WebSearch",
       "Bash(dotnet restore *)",
       "Bash(dotnet build *)",
-      "Bash(dotnet test *)"
+      "Bash(dotnet test *)",
+      "Bash(cp \"C:/Dev/spend-tracker/web/index.html\" \"C:/Dev/spend-tracker/api/src/SpendTracker.Api/wwwroot/index.html\")",
+      "Bash(cp \"C:/Dev/spend-tracker/web/styles.css\" \"C:/Dev/spend-tracker/api/src/SpendTracker.Api/wwwroot/styles.css\")",
+      "Bash(cp \"C:/Dev/spend-tracker/web/app.js\" \"C:/Dev/spend-tracker/api/src/SpendTracker.Api/wwwroot/app.js\")"
     ]
   }
 }

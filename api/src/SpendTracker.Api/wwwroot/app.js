@@ -52,23 +52,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         showLoading();
         await loadCategories();
         await loadTransactions();
-        
+
         // Hide connection panel, show main content
         const connectionPanel = document.getElementById('connectionPanel');
         if (connectionPanel) connectionPanel.style.display = 'none';
-        
+
         if (elements.mainContent) elements.mainContent.style.display = 'block';
-        
+
         // Show navigation tabs
         const viewTabs = document.getElementById('viewTabs');
         if (viewTabs) viewTabs.style.display = 'flex';
-        
+
         hideLoading();
     } catch (err) {
         console.error('Connection error:', err);
         showError('Failed to connect to local server: ' + err.message);
         hideLoading();
     }
+
+    try {
+        const info = await apiRequest('/info');
+        if (info?.version) {
+            const el = document.getElementById('appVersion');
+            if (el) el.textContent = `SpendTracker v${info.version}`;
+        }
+    } catch { /* version display is non-critical */ }
 });
 
 // API Helper Functions

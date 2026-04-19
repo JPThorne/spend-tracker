@@ -752,6 +752,16 @@ details summary:hover {
     background: #c82333;
 }
 
+/* Footer */
+.app-footer {
+    border-top: 1px solid #e9ecef;
+    padding: 0.625rem 2rem;
+    text-align: right;
+    color: #adb5bd;
+    font-size: 0.75rem;
+    background: #fafafa;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     body {
