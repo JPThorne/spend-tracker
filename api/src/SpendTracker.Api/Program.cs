@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.EntityFrameworkCore;
 using SpendTracker.Api;
-using SpendTracker.Api.Middleware;
 using SpendTracker.Domain.Repositories;
 using SpendTracker.Domain.Services;
 using SpendTracker.Infrastructure.Data;
@@ -59,9 +58,6 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
-
-// Add API key authentication middleware
-app.UseApiKeyAuthentication();
 
 app.UseAuthorization();
 app.MapControllers();

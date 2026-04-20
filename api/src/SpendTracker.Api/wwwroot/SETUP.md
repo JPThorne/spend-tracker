@@ -27,12 +27,9 @@ npx http-server -p 8080
 
 The web app will be available at `http://localhost:8080`
 
-### Step 3: Connect to the API
+### Step 3: Open the App
 
-1. Open `http://localhost:8080` in your browser
-2. Enter the API URL: `http://localhost:5000/api`
-3. Enter the API Key: `b8f4e7a9-2c3d-4f5a-9e8b-1d2c3e4f5a6b`
-4. Click "Connect"
+Open `http://localhost:8080` in your browser.
 
 ## 📋 Features
 
@@ -71,18 +68,6 @@ The web app will be available at `http://localhost:8080`
 | `/transactions/{id}/category` | PUT | Categorize single transaction |
 | `/transactions/bulk-categorize` | POST | Categorize multiple transactions |
 | `/transactions/upload` | POST | Upload CSV file |
-
-## 🔐 API Key
-
-The API key is configured in `api/SpendTracker.Api/appsettings.json`:
-
-```json
-{
-  "ApiKey": "b8f4e7a9-2c3d-4f5a-9e8b-1d2c3e4f5a6b"
-}
-```
-
-**Note:** This is a development key. Change it for production use!
 
 ## 📊 Data Format
 
@@ -136,16 +121,7 @@ Edit the default URL in `app.js`:
 let API_URL = 'http://localhost:5000/api'; // Change this
 ```
 
-### Change API Key
-Update in both:
-1. `api/SpendTracker.Api/appsettings.json`
-2. Enter the new key in the web UI
-
 ## 🐛 Troubleshooting
-
-### Connection Failed
-- **Issue**: "Authentication failed. Please check your API key."
-- **Solution**: Ensure the API key matches the one in `appsettings.json`
 
 ### CORS Errors
 - **Issue**: Browser console shows CORS errors
@@ -183,20 +159,13 @@ The code is organized into sections:
 
 ### Production Deployment
 
-1. **Update API Key**: Generate a strong, random key
-2. **Update CORS**: In `api/SpendTracker.Api/Program.cs`, change from `AllowAnyOrigin()` to specific domain
-3. **Deploy API**: Host on Azure, AWS, or any .NET hosting service
+1. **Update CORS**: In `api/SpendTracker.Api/Program.cs`, change from `AllowAnyOrigin()` to specific domain
+2. **Deploy API**: Host on Azure, AWS, or any .NET hosting service
 4. **Deploy Web App**: 
    - GitHub Pages
    - Netlify
    - Vercel
    - Any static hosting service
-
-### Environment Variables (Production)
-Store the API key securely:
-- Azure: Application Settings
-- AWS: Parameter Store
-- Environment Variables on your hosting platform
 
 ## 📚 Additional Resources
 

@@ -41,8 +41,6 @@ cd api && dotnet watch test
 **Data flow for CSV import:**
 Controller → `TransactionService.UploadCsvAsync` → `CsvParsingService.ParseAndImportCsvAsync` → bank-specific parser (Nedbank/Investec/ABSA, each implementing `ICsvParser`) → duplicate check via `ITransactionRepository.ExistsAsync` → bulk save with a `UploadBatchId` (Guid).
 
-**Authentication:** All API requests require `x-api-key` header, validated by `ApiKeyAuthenticationMiddleware`. The development key is in `appsettings.json`.
-
 **Database migrations** run automatically at startup via `DatabaseUpgrader` (DbUp). Migration scripts live in `SpendTracker.Infrastructure/DatabaseMigrations/Scripts/` as embedded resources.
 
 **ServiceResult pattern:** Services return `ServiceResult<T>` with a `ServiceErrorType` enum rather than throwing. Controllers map these to HTTP responses.

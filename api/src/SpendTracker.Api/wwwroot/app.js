@@ -1,6 +1,5 @@
 // API Client Configuration
 let API_URL = 'http://localhost:5000/api'; // Local .NET API
-let API_KEY = 'b8f4e7a9-2c3d-4f5a-9e8b-1d2c3e4f5a6b'; // From appsettings.json
 let categories = [];
 let transactions = [];
 let selectedTransactions = new Set();
@@ -85,9 +84,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function apiRequest(endpoint, method = 'GET', body = null) {
     const options = {
         method,
-        headers: {
-            'x-api-key': API_KEY
-        }
+        headers: {}
     };
 
     if (body && !(body instanceof FormData)) {
