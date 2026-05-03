@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.EntityFrameworkCore;
 using SpendTracker.Api;
 using SpendTracker.Domain.Repositories;
@@ -54,8 +56,12 @@ if (app.Environment.IsDevelopment())
     app.UseDeveloperExceptionPage();
 }
 
-app.UseDefaultFiles();
-app.UseStaticFiles();
+var embeddedProvider = new EmbeddedFileProvider(
+    Assembly.GetExecutingAssembly(),
+    "SpendTracker.Api.wwwroot"
+);
+app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = embeddedProvider });
+app.UseStaticFiles(new StaticFileOptions { FileProvider = embeddedProvider });
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
 

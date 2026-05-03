@@ -16,7 +16,12 @@
       "Bash(dotnet test *)",
       "Bash(cp \"C:/Dev/spend-tracker/web/index.html\" \"C:/Dev/spend-tracker/api/src/SpendTracker.Api/wwwroot/index.html\")",
       "Bash(cp \"C:/Dev/spend-tracker/web/styles.css\" \"C:/Dev/spend-tracker/api/src/SpendTracker.Api/wwwroot/styles.css\")",
-      "Bash(cp \"C:/Dev/spend-tracker/web/app.js\" \"C:/Dev/spend-tracker/api/src/SpendTracker.Api/wwwroot/app.js\")"
+      "Bash(cp \"C:/Dev/spend-tracker/web/app.js\" \"C:/Dev/spend-tracker/api/src/SpendTracker.Api/wwwroot/app.js\")",
+      "Bash(dir \"api/src/SpendTracker.Api/wwwroot/\")",
+      "PowerShell(head -30)",
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Dev\\\\spend-tracker\\\\web\" -Recurse -Force | Where-Object { $_.Name -match \"package\\\\.json|tsconfig|vite|webpack|build|dist|node_modules\" })",
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Dev\\\\spend-tracker\\\\web\" -Recurse -Force | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Dev\\\\spend-tracker\" -Depth 2 -Force | Where-Object { $_.Name -match \"\\\\.yml|\\\\.yaml|Makefile|build|script|\\\\.sh|\\\\.bat|\\\\.ps1\" })"
     ]
   }
 }
