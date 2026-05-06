@@ -10,7 +10,6 @@ public class CategoriesController(
     ICategoryService categoryService,
     ILogger<CategoriesController> logger) : ControllerBase
 {
-    private readonly ILogger<CategoriesController> _logger = logger;
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<CategoryDto>>> GetAllCategories(
@@ -78,10 +77,12 @@ public class CategoriesController(
         var result = await categoryService.CreateAsync(createDto);
         if (!result.Success)
         {
+            logger.LogWarning("Create category failed: {Reason} (name={Name})", result.Error?.Message, createDto.Name);
             return Conflict(result.Error?.Message);
         }
 
-        return CreatedAtAction(nameof(GetCategoryById), new { id = result.Value!.Id }, result.Value);
+        logger.LogInformation("Category created: id={Id} name={Name}", result.Value!.Id, result.Value.Name);
+        return CreatedAtAction(nameof(GetCategoryById), new { id = result.Value.Id }, result.Value);
     }
 
     [HttpPut("{id:int}")]
@@ -90,6 +91,7 @@ public class CategoriesController(
         var result = await categoryService.UpdateAsync(id, updateDto);
         if (!result.Success)
         {
+            logger.LogWarning("Update category failed: {Reason} (id={Id})", result.Error?.Message, id);
             return result.Error?.Type == ServiceErrorType.NotFound
                 ? NotFound(result.Error?.Message)
                 : Conflict(result.Error?.Message);
@@ -104,11 +106,13 @@ public class CategoriesController(
         var result = await categoryService.DeleteAsync(id);
         if (!result.Success)
         {
+            logger.LogWarning("Delete category failed: {Reason} (id={Id})", result.Error?.Message, id);
             return result.Error?.Type == ServiceErrorType.NotFound
                 ? NotFound(result.Error?.Message)
                 : BadRequest(result.Error?.Message);
         }
 
+        logger.LogInformation("Category deleted: id={Id}", id);
         return NoContent();
     }
 }

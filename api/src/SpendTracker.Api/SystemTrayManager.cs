@@ -1,4 +1,5 @@
 using AutoUpdaterDotNET;
+using Serilog;
 using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
@@ -47,6 +48,7 @@ public class SystemTrayManager : IDisposable
         {
             _prefs.AutoUpdateEnabled = autoUpdateItem.Checked;
             _prefs.Save();
+            Log.Information("Auto-updates {Status}", autoUpdateItem.Checked ? "enabled" : "disabled");
         };
         contextMenu.Items.Add(autoUpdateItem);
 
@@ -65,11 +67,28 @@ public class SystemTrayManager : IDisposable
 
         if (!string.IsNullOrEmpty(_manifestUrl))
         {
-            // Initial check after 30 seconds, then every hour
+            AutoUpdater.CheckForUpdateEvent += OnCheckForUpdate;
             _updateTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
             _updateTimer.Tick += OnUpdateTimerTick;
             _updateTimer.Start();
         }
+
+        Log.Information("Tray icon initialised. Auto-updates are {Status}", prefs.AutoUpdateEnabled ? "enabled" : "disabled");
+    }
+
+    private void OnCheckForUpdate(UpdateInfoEventArgs args)
+    {
+        if (args.Error != null)
+        {
+            Log.Error(args.Error, "Auto-update check failed (manifest: {ManifestUrl})", _manifestUrl);
+            return;
+        }
+
+        if (args.IsUpdateAvailable)
+            Log.Information("Update available: installed={Installed} available={Available} url={Url}",
+                args.InstalledVersion, args.CurrentVersion, args.DownloadURL);
+        else
+            Log.Information("Auto-update check complete: already on latest version ({Version})", args.InstalledVersion);
     }
 
     private void OnUpdateTimerTick(object? sender, EventArgs e)
@@ -77,6 +96,7 @@ public class SystemTrayManager : IDisposable
         _updateTimer!.Interval = 3_600_000;
         if (_prefs.AutoUpdateEnabled)
         {
+            Log.Information("Checking for updates at {ManifestUrl}", _manifestUrl);
             AutoUpdater.ReportErrors = false;
             AutoUpdater.Start(_manifestUrl);
         }
@@ -89,6 +109,7 @@ public class SystemTrayManager : IDisposable
 
     private void OnExit(object? sender, EventArgs e)
     {
+        Log.Information("Exit requested via tray menu");
         _notifyIcon.Visible = false;
         _context.Shutdown();
     }
@@ -110,9 +131,9 @@ public class SystemTrayManager : IDisposable
                 Process.Start("open", url);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently fail - user can still access via tray icon
+            Log.Warning(ex, "Failed to open browser at {Url}", url);
         }
     }
 
@@ -120,6 +141,7 @@ public class SystemTrayManager : IDisposable
     {
         if (_disposed) return;
 
+        Log.Information("SpendTracker tray shutting down");
         _updateTimer?.Stop();
         _updateTimer?.Dispose();
         _notifyIcon.Visible = false;

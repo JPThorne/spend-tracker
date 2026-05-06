@@ -21,7 +21,19 @@
       "PowerShell(head -30)",
       "PowerShell(Get-ChildItem -Path \"c:\\\\Dev\\\\spend-tracker\\\\web\" -Recurse -Force | Where-Object { $_.Name -match \"package\\\\.json|tsconfig|vite|webpack|build|dist|node_modules\" })",
       "PowerShell(Get-ChildItem -Path \"c:\\\\Dev\\\\spend-tracker\\\\web\" -Recurse -Force | ForEach-Object { $_.FullName })",
-      "PowerShell(Get-ChildItem -Path \"c:\\\\Dev\\\\spend-tracker\" -Depth 2 -Force | Where-Object { $_.Name -match \"\\\\.yml|\\\\.yaml|Makefile|build|script|\\\\.sh|\\\\.bat|\\\\.ps1\" })"
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Dev\\\\spend-tracker\" -Depth 2 -Force | Where-Object { $_.Name -match \"\\\\.yml|\\\\.yaml|Makefile|build|script|\\\\.sh|\\\\.bat|\\\\.ps1\" })",
+      "PowerShell(\"User: $env:USERNAME\"; \"UserProfile: $env:USERPROFILE\"; \"ClaudeConfigDir: $env:CLAUDE_CONFIG_DIR\")",
+      "PowerShell(\"ConfigDir: $env:CLAUDE_CONFIG_DIR\"; if \\(Test-Path \"$env:CLAUDE_CONFIG_DIR\\\\.credentials.json\"\\) { \"credentials.json exists\" }; if \\(Test-Path \"$env:CLAUDE_CONFIG_DIR\\\\.claude.json\"\\) { Get-Content \"$env:CLAUDE_CONFIG_DIR\\\\.claude.json\" | ConvertFrom-Json | Select-Object -Property oauthAccount,userID,email | Format-List })",
+      "Bash(claude config *)",
+      "Bash(claude whoami *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Dev\\\\spend-tracker\" -Force)",
+      "Bash(Select-Object Name, FullName)",
+      "PowerShell(Copy-Item *)",
+      "Read(//c/Users/Jean-Paul/.claude/**)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Dev\\\\spend-tracker\" -Recurse -File -Filter \"*.csproj\")",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Dev\\\\spend-tracker\" -Recurse | Where-Object { $_.PSIsContainer } | Select-Object -ExpandProperty FullName | Sort-Object | head -30)",
+      "Bash(Copy-Item \"c:\\\\Dev\\\\spend-tracker\\\\web\\\\app.js\" \"c:\\\\Dev\\\\spend-tracker\\\\api\\\\src\\\\SpendTracker.Api\\\\wwwroot\\\\app.js\" -Force)"
     ]
   }
 }

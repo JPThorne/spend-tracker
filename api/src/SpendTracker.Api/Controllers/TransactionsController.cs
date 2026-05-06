@@ -48,6 +48,9 @@ public class TransactionsController(
 
         try
         {
+            logger.LogInformation("CSV upload started: file={FileName} size={Size}B bank={BankType}",
+                file.FileName, file.Length, bankType);
+
             await using var stream = file.OpenReadStream();
             var result = await transactionService.UploadCsvAsync(new CsvUploadRequest(file.FileName, stream, bankType));
 
@@ -58,14 +61,18 @@ public class TransactionsController(
                     return BadRequest(result.Value);
                 }
 
+                logger.LogWarning("CSV upload rejected: {Reason} (file={FileName})", result.Error?.Message, file.FileName);
                 return BadRequest(result.Error?.Message);
             }
+
+            logger.LogInformation("CSV upload complete: {Imported} imported, {Duplicates} skipped, {Failed} failed from {FileName}",
+                result.Value!.SuccessfulImports, result.Value.DuplicatesSkipped, result.Value.FailedImports, file.FileName);
 
             return Ok(result.Value);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error uploading CSV file");
+            logger.LogError(ex, "Unhandled error uploading CSV file: {FileName}", file.FileName);
             return StatusCode(500, "An error occurred while processing the CSV file");
         }
     }

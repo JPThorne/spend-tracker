@@ -334,6 +334,7 @@ async function categorizeBulk(categoryId) {
     if (ids.length === 0) return;
 
     try {
+        console.log(`Bulk categorise: ${ids.length} transactions → category ${categoryId}`);
         showLoading();
         const result = await apiRequest('/transactions/bulk-categorize', 'POST', {
             transactionIds: ids,
@@ -383,6 +384,7 @@ window.deleteCategory = async function (categoryId) {
     if (!confirm('Delete this category?')) return;
 
     try {
+        console.log(`Deleting category ${categoryId}`);
         showLoading();
         await apiRequest(`/categories/${categoryId}`, 'DELETE');
         await loadCategories();
@@ -752,9 +754,11 @@ async function uploadCsv() {
     formData.append('bankType', bankTypeSelect.value);
 
     try {
+        console.log(`CSV upload started: ${fileInput.files[0].name} (${bankTypeSelect.value})`);
         showLoading();
         const result = await apiRequest('/transactions/upload', 'POST', formData);
         if (result) {
+            console.log(`CSV upload complete: ${result.successfulImports} imported, ${result.duplicatesSkipped} duplicates skipped, ${result.failedImports} failed`);
             showUploadResult(result);
             fileInput.value = '';
             bankTypeSelect.value = '';
@@ -834,6 +838,7 @@ window.deleteUploadBatch = async function (uploadBatchId) {
     if (!confirm('Delete all transactions from this upload? This cannot be undone.')) return;
 
     try {
+        console.log(`Deleting upload batch ${uploadBatchId}`);
         showLoading();
         const result = await apiRequest(`/transactions/batch/${uploadBatchId}`, 'DELETE');
 
@@ -968,9 +973,11 @@ if (elements.categoryForm) {
             showLoading();
             if (mode === 'edit') {
                 const id = parseInt(elements.categoryForm.dataset.id);
+                console.log(`Updating category ${id}: name="${name}"`);
                 await apiRequest(`/categories/${id}`, 'PUT', { name, description });
                 showSuccess('Category updated.');
             } else {
+                console.log(`Creating category: name="${name}"`);
                 await apiRequest('/categories', 'POST', { name, description });
                 showSuccess('Category created.');
             }
