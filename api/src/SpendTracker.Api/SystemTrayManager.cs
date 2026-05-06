@@ -67,13 +67,27 @@ public class SystemTrayManager : IDisposable
 
         if (!string.IsNullOrEmpty(_manifestUrl))
         {
+            Log.Information("Auto-update check enabled. Manifest URL: {ManifestUrl}", _manifestUrl);
+
+            AutoUpdater.AppTitle = "SpendTracker";
+            AutoUpdater.ShowRemindLaterButton = false;
+            AutoUpdater.ShowSkipButton = false;
+            AutoUpdater.OpenDownloadPage = false;
+            AutoUpdater.UpdateMode = Mode.ForcedDownload;
+            AutoUpdater.TopMost = true;
+
             AutoUpdater.CheckForUpdateEvent += OnCheckForUpdate;
             _updateTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
             _updateTimer.Tick += OnUpdateTimerTick;
             _updateTimer.Start();
+            Log.Information("Update timer started. First check in 30 seconds, then every 1 hour");
+        }
+        else
+        {
+            Log.Warning("Auto-update check DISABLED: manifest URL is empty or null");
         }
 
-        Log.Information("Tray icon initialised. Auto-updates are {Status}", prefs.AutoUpdateEnabled ? "enabled" : "disabled");
+        Log.Information("Tray icon initialised. Auto-updates preference: {Status}", prefs.AutoUpdateEnabled ? "enabled" : "disabled");
     }
 
     private void OnCheckForUpdate(UpdateInfoEventArgs args)
@@ -85,8 +99,27 @@ public class SystemTrayManager : IDisposable
         }
 
         if (args.IsUpdateAvailable)
+        {
             Log.Information("Update available: installed={Installed} available={Available} url={Url}",
                 args.InstalledVersion, args.CurrentVersion, args.DownloadURL);
+
+            if (_prefs.AutoUpdateEnabled)
+            {
+                try
+                {
+                    Log.Information("Showing auto-update UI for available update");
+                    AutoUpdater.ShowUpdateForm(args);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Failed to show update form for {Url}", args.DownloadURL);
+                }
+            }
+            else
+            {
+                Log.Information("Auto-update available but disabled in preferences");
+            }
+        }
         else
             Log.Information("Auto-update check complete: already on latest version ({Version})", args.InstalledVersion);
     }
@@ -94,11 +127,24 @@ public class SystemTrayManager : IDisposable
     private void OnUpdateTimerTick(object? sender, EventArgs e)
     {
         _updateTimer!.Interval = 3_600_000;
+        Log.Information("Update timer tick fired. AutoUpdateEnabled={AutoUpdateEnabled}", _prefs.AutoUpdateEnabled);
         if (_prefs.AutoUpdateEnabled)
         {
-            Log.Information("Checking for updates at {ManifestUrl}", _manifestUrl);
-            AutoUpdater.ReportErrors = false;
-            AutoUpdater.Start(_manifestUrl);
+            try
+            {
+                Log.Information("Checking for updates at {ManifestUrl}", _manifestUrl);
+                AutoUpdater.ReportErrors = false;
+                AutoUpdater.Start(_manifestUrl);
+                Log.Information("AutoUpdater.Start() called successfully");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Exception occurred in AutoUpdater.Start()");
+            }
+        }
+        else
+        {
+            Log.Information("Update check skipped: AutoUpdateEnabled is false");
         }
     }
 

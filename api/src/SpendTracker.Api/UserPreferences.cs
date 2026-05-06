@@ -15,9 +15,21 @@ public class UserPreferences
         try
         {
             if (File.Exists(PrefsPath))
-                return JsonSerializer.Deserialize<UserPreferences>(File.ReadAllText(PrefsPath)) ?? new();
+            {
+                var prefs = JsonSerializer.Deserialize<UserPreferences>(File.ReadAllText(PrefsPath)) ?? new();
+                Serilog.Log.Information("User preferences loaded from {Path}. AutoUpdateEnabled={AutoUpdateEnabled}", PrefsPath, prefs.AutoUpdateEnabled);
+                return prefs;
+            }
+            else
+            {
+                Serilog.Log.Information("User preferences file not found at {Path}. Using defaults (AutoUpdateEnabled=true)", PrefsPath);
+                return new();
+            }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Error loading user preferences from {Path}. Using defaults", PrefsPath);
+        }
         return new();
     }
 
