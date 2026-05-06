@@ -37,4 +37,11 @@
     <EmbeddedResource Include="wwwroot\styles.css" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="appsettings.json" />
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

@@ -1,6 +1,8 @@
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -41,6 +43,15 @@ public class Program
             Log.Information("Assembly version detected as: {Version}", version);
 
             var builder = WebApplication.CreateBuilder(args);
+
+            builder.Configuration.Sources.Clear();
+            using var embeddedSettings = LoadEmbeddedAppSettings();
+            builder.Configuration.AddJsonStream(embeddedSettings);
+            builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: false);
+            builder.Configuration.AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: false);
+            builder.Configuration.AddEnvironmentVariables();
+            builder.Configuration.AddCommandLine(args);
+
             builder.Host.UseSerilog();
 
             builder.Services.AddControllers();
@@ -124,5 +135,20 @@ public class Program
         {
             Log.CloseAndFlush();
         }
+    }
+
+    private static Stream LoadEmbeddedAppSettings()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var resourceName = assembly.GetManifestResourceNames()
+            .FirstOrDefault(name => name.EndsWith("appsettings.json", StringComparison.OrdinalIgnoreCase));
+
+        if (string.IsNullOrEmpty(resourceName))
+        {
+            throw new InvalidOperationException("Embedded appsettings.json resource not found. Verify SpendTracker.Api.csproj includes appsettings.json as an embedded resource.");
+        }
+
+        return assembly.GetManifestResourceStream(resourceName)
+               ?? throw new InvalidOperationException($"Unable to open embedded resource '{resourceName}'.");
     }
 }
