@@ -3,6 +3,7 @@ using Serilog;
 using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace SpendTracker.Api;
@@ -15,7 +16,6 @@ public class SystemTrayManager : IDisposable
     private readonly UserPreferences _prefs;
     private readonly string _manifestUrl;
     private readonly System.Windows.Forms.Timer? _updateTimer;
-    private readonly Control _uiInvoker;
     private bool _disposed;
 
     public SystemTrayManager(string appUrl, TrayApplicationContext context, UserPreferences prefs, string manifestUrl)
@@ -58,9 +58,6 @@ public class SystemTrayManager : IDisposable
 
         _notifyIcon.ContextMenuStrip = contextMenu;
         _notifyIcon.DoubleClick += (s, e) => OnOpen(s, e);
-
-        _uiInvoker = new Control();
-        _ = _uiInvoker.Handle;
 
         _notifyIcon.ShowBalloonTip(
             3000,
@@ -109,15 +106,23 @@ public class SystemTrayManager : IDisposable
 
             if (_prefs.AutoUpdateEnabled)
             {
-                try
+                var updateThread = new Thread(() =>
                 {
-                    Log.Information("Showing auto-update UI for available update");
-                    _uiInvoker.BeginInvoke(() => AutoUpdater.ShowUpdateForm(args));
-                }
-                catch (Exception ex)
+                    try
+                    {
+                        Log.Information("Showing auto-update UI for available update");
+                        AutoUpdater.ShowUpdateForm(args);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, "Failed to show update form for {Url}", args.DownloadURL);
+                    }
+                })
                 {
-                    Log.Error(ex, "Failed to show update form for {Url}", args.DownloadURL);
-                }
+                    IsBackground = true
+                };
+                updateThread.SetApartmentState(ApartmentState.STA);
+                updateThread.Start();
             }
             else
             {
@@ -195,7 +200,6 @@ public class SystemTrayManager : IDisposable
         _updateTimer?.Stop();
         _updateTimer?.Dispose();
         AutoUpdater.CheckForUpdateEvent -= OnCheckForUpdate;
-        _uiInvoker.Dispose();
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _disposed = true;
