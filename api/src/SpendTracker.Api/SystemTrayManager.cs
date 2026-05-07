@@ -15,6 +15,7 @@ public class SystemTrayManager : IDisposable
     private readonly UserPreferences _prefs;
     private readonly string _manifestUrl;
     private readonly System.Windows.Forms.Timer? _updateTimer;
+    private readonly Control _uiInvoker;
     private bool _disposed;
 
     public SystemTrayManager(string appUrl, TrayApplicationContext context, UserPreferences prefs, string manifestUrl)
@@ -57,6 +58,9 @@ public class SystemTrayManager : IDisposable
 
         _notifyIcon.ContextMenuStrip = contextMenu;
         _notifyIcon.DoubleClick += (s, e) => OnOpen(s, e);
+
+        _uiInvoker = new Control();
+        _ = _uiInvoker.Handle;
 
         _notifyIcon.ShowBalloonTip(
             3000,
@@ -108,7 +112,7 @@ public class SystemTrayManager : IDisposable
                 try
                 {
                     Log.Information("Showing auto-update UI for available update");
-                    AutoUpdater.ShowUpdateForm(args);
+                    _uiInvoker.BeginInvoke(() => AutoUpdater.ShowUpdateForm(args));
                 }
                 catch (Exception ex)
                 {
@@ -190,6 +194,8 @@ public class SystemTrayManager : IDisposable
         Log.Information("SpendTracker tray shutting down");
         _updateTimer?.Stop();
         _updateTimer?.Dispose();
+        AutoUpdater.CheckForUpdateEvent -= OnCheckForUpdate;
+        _uiInvoker.Dispose();
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _disposed = true;
