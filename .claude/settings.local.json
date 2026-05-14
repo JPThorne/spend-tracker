@@ -33,7 +33,10 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Dev\\\\spend-tracker\" -Recurse -File -Filter \"*.csproj\")",
       "Bash(Select-Object -ExpandProperty FullName)",
       "PowerShell(Get-ChildItem -Path \"c:\\\\Dev\\\\spend-tracker\" -Recurse | Where-Object { $_.PSIsContainer } | Select-Object -ExpandProperty FullName | Sort-Object | head -30)",
-      "Bash(Copy-Item \"c:\\\\Dev\\\\spend-tracker\\\\web\\\\app.js\" \"c:\\\\Dev\\\\spend-tracker\\\\api\\\\src\\\\SpendTracker.Api\\\\wwwroot\\\\app.js\" -Force)"
+      "Bash(Copy-Item \"c:\\\\Dev\\\\spend-tracker\\\\web\\\\app.js\" \"c:\\\\Dev\\\\spend-tracker\\\\api\\\\src\\\\SpendTracker.Api\\\\wwwroot\\\\app.js\" -Force)",
+      "Bash(xargs grep -l \"AutoUpdater\\\\|DownloadUpdate\\\\|UpdateProgress\")",
+      "Bash(cat \"C:/Users/Jean-Paul/.nuget/packages/autoupdater.net.official/1.9.2/lib/net8.0-windows7.0/AutoUpdater.NET.xml\" | grep -E \"\\(DownloadedEvent|DownloadedEventArgs|ApplicationExit|Cancel|DownloadedPath\\)\" | head -40)",
+      "Read(//c/Users/Jean-Paul/.nuget/packages/autoupdater.net.official/1.9.2/lib/net8.0-windows7.0/**)"
     ]
   }
 }

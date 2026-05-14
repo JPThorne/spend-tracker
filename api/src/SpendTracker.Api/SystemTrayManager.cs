@@ -16,6 +16,7 @@ public class SystemTrayManager : IDisposable
     private readonly UserPreferences _prefs;
     private readonly string _manifestUrl;
     private readonly System.Windows.Forms.Timer? _updateTimer;
+    private string? _pendingDownloadUrl;
     private bool _disposed;
 
     public SystemTrayManager(string appUrl, TrayApplicationContext context, UserPreferences prefs, string manifestUrl)
@@ -76,8 +77,10 @@ public class SystemTrayManager : IDisposable
             AutoUpdater.OpenDownloadPage = false;
             AutoUpdater.UpdateMode = Mode.ForcedDownload;
             AutoUpdater.TopMost = true;
+            AutoUpdater.DownloadPath = Path.Combine(Path.GetTempPath(), "SpendTrackerUpdate");
 
             AutoUpdater.CheckForUpdateEvent += OnCheckForUpdate;
+            AutoUpdater.ApplicationExitEvent += OnApplicationExit;
             _updateTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
             _updateTimer.Tick += OnUpdateTimerTick;
             _updateTimer.Start();
@@ -103,6 +106,7 @@ public class SystemTrayManager : IDisposable
         {
             Log.Information("Update available: installed={Installed} available={Available} url={Url}",
                 args.InstalledVersion, args.CurrentVersion, args.DownloadURL);
+            _pendingDownloadUrl = args.DownloadURL;
 
             if (_prefs.AutoUpdateEnabled)
             {
@@ -131,6 +135,49 @@ public class SystemTrayManager : IDisposable
         }
         else
             Log.Information("Auto-update check complete: already on latest version ({Version})", args.InstalledVersion);
+    }
+
+    private void OnApplicationExit()
+    {
+        if (_pendingDownloadUrl == null) { Application.Exit(); return; }
+
+        var fileName = Path.GetFileName(new Uri(_pendingDownloadUrl).LocalPath);
+        var downloadedPath = Path.Combine(AutoUpdater.DownloadPath, fileName);
+        var currentExe = Process.GetCurrentProcess().MainModule?.FileName;
+
+        if (!File.Exists(downloadedPath) || string.IsNullOrEmpty(currentExe))
+        {
+            Log.Warning("Cannot self-replace: downloadedPath={D} currentExe={E}", downloadedPath, currentExe);
+            Application.Exit();
+            return;
+        }
+
+        var pid = Process.GetCurrentProcess().Id;
+        var script = Path.Combine(Path.GetTempPath(), "spendtracker_update.bat");
+
+        File.WriteAllText(script, $"""
+            @echo off
+            :wait
+            tasklist /FI "PID eq {pid}" 2>NUL | findstr /I "{pid}" >NUL
+            if not ERRORLEVEL 1 (
+                timeout /t 1 /nobreak >NUL
+                goto wait
+            )
+            copy /Y "{downloadedPath}" "{currentExe}"
+            start "" "{currentExe}"
+            del "%~f0"
+            """);
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "cmd.exe",
+            Arguments = $"/c \"{script}\"",
+            CreateNoWindow = true,
+            UseShellExecute = false
+        });
+
+        Log.Information("Update replacement script launched; exiting");
+        Application.Exit();
     }
 
     private void OnUpdateTimerTick(object? sender, EventArgs e)
@@ -200,6 +247,7 @@ public class SystemTrayManager : IDisposable
         _updateTimer?.Stop();
         _updateTimer?.Dispose();
         AutoUpdater.CheckForUpdateEvent -= OnCheckForUpdate;
+        AutoUpdater.ApplicationExitEvent -= OnApplicationExit;
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _disposed = true;
