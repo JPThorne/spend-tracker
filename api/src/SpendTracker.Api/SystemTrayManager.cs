@@ -139,7 +139,7 @@ public class SystemTrayManager : IDisposable
 
     private void OnApplicationExit()
     {
-        if (_pendingDownloadUrl == null) { Application.Exit(); return; }
+        if (_pendingDownloadUrl == null) { Environment.Exit(0); return; }
 
         var fileName = Path.GetFileName(new Uri(_pendingDownloadUrl).LocalPath);
         var downloadedPath = Path.Combine(AutoUpdater.DownloadPath, fileName);
@@ -148,7 +148,7 @@ public class SystemTrayManager : IDisposable
         if (!File.Exists(downloadedPath) || string.IsNullOrEmpty(currentExe))
         {
             Log.Warning("Cannot self-replace: downloadedPath={D} currentExe={E}", downloadedPath, currentExe);
-            Application.Exit();
+            Environment.Exit(0);
             return;
         }
 
@@ -177,7 +177,8 @@ public class SystemTrayManager : IDisposable
         });
 
         Log.Information("Update replacement script launched; exiting");
-        Application.Exit();
+        Log.CloseAndFlush();
+        Environment.Exit(0);
     }
 
     private void OnUpdateTimerTick(object? sender, EventArgs e)
