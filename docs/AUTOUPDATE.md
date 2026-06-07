@@ -18,18 +18,17 @@ SpendTracker includes a robust auto-update system that:
 ## File Locations
 
 - **Main App**: `SpendTracker.exe`
-- **Updater Tool**: `SpendTrackerUpdater.exe` (must be in same directory as main app)
+- **Updater Tool**: `SpendTrackerUpdater.exe` (automatically extracted from main exe on first run)
 - **Update Download**: `%LOCALAPPDATA%\SpendTracker\Updates\SpendTracker.exe`
 - **Backup**: `SpendTracker.exe.bak` (created during update if needed)
 
 ## Installation
 
-Download `SpendTracker.zip` from the GitHub release:
-1. Extract both `SpendTracker.exe` and `SpendTrackerUpdater.exe` to the same folder
-2. Run `SpendTracker.exe`
-3. The app will check for updates automatically
+1. Download `SpendTracker.exe` from the latest GitHub release
+2. Run it
+3. Auto-updates work automatically from there
 
-Both executables must be in the same directory for auto-updates to work.
+The updater tool is embedded inside the exe and extracts itself on first run.
 
 ## Release Process
 

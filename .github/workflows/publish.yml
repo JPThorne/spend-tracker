@@ -51,21 +51,6 @@ jobs:
             -p:PublishReadyToRun=true `
             -p:Version=${{ steps.version.outputs.version }} `
             -o publish/
-          dotnet publish api/src/SpendTracker.Updater/SpendTracker.Updater.csproj `
-            -c Release `
-            -r win-x64 `
-            --self-contained `
-            -p:PublishSingleFile=true `
-            -p:PublishReadyToRun=true `
-            -p:Version=${{ steps.version.outputs.version }} `
-            -o publish/
-
-      - name: Create release package
-        shell: bash
-        run: |
-          cd publish
-          powershell -Command "Compress-Archive -Path SpendTracker.exe, SpendTrackerUpdater.exe -DestinationPath SpendTracker.zip"
-          ls -lh SpendTracker.zip
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -73,10 +58,7 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: SpendTracker ${{ steps.version.outputs.version }}
           generate_release_notes: true
-          files: |
-            publish/SpendTracker.zip
-            publish/SpendTracker.exe
-            publish/SpendTrackerUpdater.exe
+          files: publish/SpendTracker.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

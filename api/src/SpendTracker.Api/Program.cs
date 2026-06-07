@@ -43,6 +43,9 @@ public class Program
             Log.Information("SpendTracker {Version} starting up. Log directory: {LogDirectory}", version, logDirectory);
             Log.Information("Assembly version detected as: {Version}", version);
 
+            // Ensure updater tool is available before starting the app
+            UpdaterBootstrapper.EnsureUpdaterExists();
+
             var builder = WebApplication.CreateBuilder(args);
 
             builder.Configuration.Sources.Clear();
