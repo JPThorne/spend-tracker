@@ -22,6 +22,15 @@ SpendTracker includes a robust auto-update system that:
 - **Update Download**: `%LOCALAPPDATA%\SpendTracker\Updates\SpendTracker.exe`
 - **Backup**: `SpendTracker.exe.bak` (created during update if needed)
 
+## Installation
+
+Download `SpendTracker.zip` from the GitHub release:
+1. Extract both `SpendTracker.exe` and `SpendTrackerUpdater.exe` to the same folder
+2. Run `SpendTracker.exe`
+3. The app will check for updates automatically
+
+Both executables must be in the same directory for auto-updates to work.
+
 ## Release Process
 
 1. Update version in `SpendTracker.Api.csproj`
