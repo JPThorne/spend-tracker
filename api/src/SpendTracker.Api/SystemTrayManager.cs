@@ -1,10 +1,10 @@
-using AutoUpdaterDotNET;
 using Serilog;
 using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
+using SpendTracker.Api.Services;
 
 namespace SpendTracker.Api;
 
@@ -15,16 +15,18 @@ public class SystemTrayManager : IDisposable
     private readonly TrayApplicationContext _context;
     private readonly UserPreferences _prefs;
     private readonly string _manifestUrl;
+    private readonly IUpdateChecker _updateChecker;
     private readonly System.Windows.Forms.Timer? _updateTimer;
-    private string? _pendingDownloadUrl;
+    private UpdateInfo? _pendingUpdate;
     private bool _disposed;
 
-    public SystemTrayManager(string appUrl, TrayApplicationContext context, UserPreferences prefs, string manifestUrl)
+    public SystemTrayManager(string appUrl, TrayApplicationContext context, UserPreferences prefs, string manifestUrl, IUpdateChecker updateChecker)
     {
         _appUrl = appUrl;
         _context = context;
         _prefs = prefs;
         _manifestUrl = manifestUrl;
+        _updateChecker = updateChecker;
 
         _notifyIcon = new NotifyIcon
         {
@@ -71,16 +73,9 @@ public class SystemTrayManager : IDisposable
         {
             Log.Information("Auto-update check enabled. Manifest URL: {ManifestUrl}", _manifestUrl);
 
-            AutoUpdater.AppTitle = "SpendTracker";
-            AutoUpdater.ShowRemindLaterButton = false;
-            AutoUpdater.ShowSkipButton = false;
-            AutoUpdater.OpenDownloadPage = false;
-            AutoUpdater.UpdateMode = Mode.ForcedDownload;
-            AutoUpdater.TopMost = true;
-            AutoUpdater.DownloadPath = Path.Combine(Path.GetTempPath(), "SpendTrackerUpdate");
+            // Check for pending update from previous session
+            CheckForPendingUpdate();
 
-            AutoUpdater.CheckForUpdateEvent += OnCheckForUpdate;
-            AutoUpdater.ApplicationExitEvent += OnApplicationExit;
             _updateTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
             _updateTimer.Tick += OnUpdateTimerTick;
             _updateTimer.Start();
@@ -94,114 +89,179 @@ public class SystemTrayManager : IDisposable
         Log.Information("Tray icon initialised. Auto-updates preference: {Status}", prefs.AutoUpdateEnabled ? "enabled" : "disabled");
     }
 
-    private void OnCheckForUpdate(UpdateInfoEventArgs args)
+    private void CheckForPendingUpdate()
     {
-        if (args.Error != null)
+        try
         {
-            Log.Error(args.Error, "Auto-update check failed (manifest: {ManifestUrl})", _manifestUrl);
+            var pendingUpdatePath = UpdateChecker.GetPendingUpdatePath();
+            if (!string.IsNullOrEmpty(pendingUpdatePath) && File.Exists(pendingUpdatePath))
+            {
+                Log.Information("Pending update found: {Path}", pendingUpdatePath);
+
+                if (_prefs.AutoUpdateEnabled)
+                {
+                    ApplyUpdate(pendingUpdatePath);
+                }
+                else
+                {
+                    _notifyIcon.ShowBalloonTip(
+                        5000,
+                        "Update Ready",
+                        "An update is ready to install. Restart the application to apply it.",
+                        ToolTipIcon.Info
+                    );
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error checking for pending update");
+        }
+    }
+
+    private async void OnUpdateTimerTick(object? sender, EventArgs e)
+    {
+        _updateTimer!.Interval = 3_600_000; // 1 hour
+        Log.Information("Update timer tick. AutoUpdateEnabled={AutoUpdateEnabled}", _prefs.AutoUpdateEnabled);
+
+        if (!_prefs.AutoUpdateEnabled)
+        {
+            Log.Information("Update check skipped: AutoUpdateEnabled is false");
             return;
         }
 
-        if (args.IsUpdateAvailable)
+        try
         {
-            Log.Information("Update available: installed={Installed} available={Available} url={Url}",
-                args.InstalledVersion, args.CurrentVersion, args.DownloadURL);
-            _pendingDownloadUrl = args.DownloadURL;
+            Log.Information("Checking for updates at {ManifestUrl}", _manifestUrl);
+            var updateInfo = await _updateChecker.CheckForUpdatesAsync(_manifestUrl);
 
-            if (_prefs.AutoUpdateEnabled)
+            if (updateInfo?.IsUpdateAvailable == true)
             {
-                var updateThread = new Thread(() =>
-                {
-                    try
-                    {
-                        Log.Information("Showing auto-update UI for available update");
-                        AutoUpdater.ShowUpdateForm(args);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error(ex, "Failed to show update form for {Url}", args.DownloadURL);
-                    }
-                })
-                {
-                    IsBackground = true
-                };
-                updateThread.SetApartmentState(ApartmentState.STA);
-                updateThread.Start();
+                _pendingUpdate = updateInfo;
+                Log.Information("Update available: {Version} at {Url}", updateInfo.Version, updateInfo.DownloadUrl);
+
+                ShowUpdateDialog(updateInfo);
             }
             else
             {
-                Log.Information("Auto-update available but disabled in preferences");
+                Log.Information("No update available");
             }
         }
-        else
-            Log.Information("Auto-update check complete: already on latest version ({Version})", args.InstalledVersion);
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error checking for updates");
+        }
     }
 
-    private void OnApplicationExit()
+    private void ShowUpdateDialog(UpdateInfo updateInfo)
     {
-        if (_pendingDownloadUrl == null) { Environment.Exit(0); return; }
+        var result = MessageBox.Show(
+            $"SpendTracker {updateInfo.Version} is available.\n\nWould you like to download and install it?",
+            "Update Available",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Information
+        );
 
-        var fileName = Path.GetFileName(new Uri(_pendingDownloadUrl).LocalPath);
-        var downloadedPath = Path.Combine(AutoUpdater.DownloadPath, fileName);
-        var currentExe = Process.GetCurrentProcess().MainModule?.FileName;
-
-        if (!File.Exists(downloadedPath) || string.IsNullOrEmpty(currentExe))
+        if (result == DialogResult.Yes)
         {
-            Log.Warning("Cannot self-replace: downloadedPath={D} currentExe={E}", downloadedPath, currentExe);
+            DownloadAndApplyUpdate(updateInfo);
+        }
+    }
+
+    private async void DownloadAndApplyUpdate(UpdateInfo updateInfo)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(updateInfo.DownloadUrl))
+            {
+                Log.Error("Update has no download URL");
+                MessageBox.Show("Error: No download URL provided", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            var fileName = Path.GetFileName(new Uri(updateInfo.DownloadUrl).LocalPath);
+            Log.Information("Starting download of {FileName} from {Url}", fileName, updateInfo.DownloadUrl);
+
+            var success = await _updateChecker.DownloadUpdateAsync(updateInfo.DownloadUrl, fileName);
+
+            if (success)
+            {
+                _notifyIcon.ShowBalloonTip(
+                    3000,
+                    "Update Ready",
+                    "Update downloaded. Restart the application to apply it.",
+                    ToolTipIcon.Info
+                );
+                Log.Information("Update downloaded successfully. Will be applied on next restart.");
+            }
+            else
+            {
+                Log.Warning("Failed to download update");
+                MessageBox.Show(
+                    "Failed to download the update. Please try again later.",
+                    "Download Error",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error downloading update");
+            MessageBox.Show(
+                $"Error downloading update: {ex.Message}",
+                "Download Error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error
+            );
+        }
+    }
+
+    private void ApplyUpdate(string updatePath)
+    {
+        try
+        {
+            var currentExePath = Process.GetCurrentProcess().MainModule?.FileName;
+            if (string.IsNullOrEmpty(currentExePath))
+            {
+                Log.Error("Cannot determine current executable path");
+                return;
+            }
+
+            var updaterExePath = Path.Combine(Path.GetDirectoryName(currentExePath) ?? "", "SpendTrackerUpdater.exe");
+
+            // If updater is not in the same directory, look in bin directory
+            if (!File.Exists(updaterExePath))
+            {
+                var binPath = AppContext.BaseDirectory;
+                updaterExePath = Path.Combine(binPath, "SpendTrackerUpdater.exe");
+            }
+
+            if (!File.Exists(updaterExePath))
+            {
+                Log.Warning("Updater tool not found at {Path}. Update will be applied on manual restart.", updaterExePath);
+                return;
+            }
+
+            var currentProcessId = Process.GetCurrentProcess().Id;
+            Log.Information("Launching updater: {UpdaterPath} with args: {PID} {UpdatePath} {CurrentExe}",
+                updaterExePath, currentProcessId, updatePath, currentExePath);
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = updaterExePath,
+                Arguments = $"{currentProcessId} \"{updatePath}\" \"{currentExePath}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+
+            Log.Information("Updater launched, exiting to allow replacement");
+            Log.CloseAndFlush();
             Environment.Exit(0);
-            return;
         }
-
-        var pid = Process.GetCurrentProcess().Id;
-        var script = Path.Combine(Path.GetTempPath(), "spendtracker_update.bat");
-
-        File.WriteAllText(script, $"""
-            @echo off
-            :wait
-            tasklist /FI "PID eq {pid}" 2>NUL | findstr /I "{pid}" >NUL
-            if not ERRORLEVEL 1 (
-                timeout /t 1 /nobreak >NUL
-                goto wait
-            )
-            copy /Y "{downloadedPath}" "{currentExe}"
-            start "" "{currentExe}"
-            del "%~f0"
-            """);
-
-        Process.Start(new ProcessStartInfo
+        catch (Exception ex)
         {
-            FileName = "cmd.exe",
-            Arguments = $"/c \"{script}\"",
-            CreateNoWindow = true,
-            UseShellExecute = false
-        });
-
-        Log.Information("Update replacement script launched; exiting");
-        Log.CloseAndFlush();
-        Environment.Exit(0);
-    }
-
-    private void OnUpdateTimerTick(object? sender, EventArgs e)
-    {
-        _updateTimer!.Interval = 3_600_000;
-        Log.Information("Update timer tick fired. AutoUpdateEnabled={AutoUpdateEnabled}", _prefs.AutoUpdateEnabled);
-        if (_prefs.AutoUpdateEnabled)
-        {
-            try
-            {
-                Log.Information("Checking for updates at {ManifestUrl}", _manifestUrl);
-                AutoUpdater.ReportErrors = false;
-                AutoUpdater.Start(_manifestUrl);
-                Log.Information("AutoUpdater.Start() called successfully");
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Exception occurred in AutoUpdater.Start()");
-            }
-        }
-        else
-        {
-            Log.Information("Update check skipped: AutoUpdateEnabled is false");
+            Log.Error(ex, "Error applying update");
         }
     }
 
@@ -247,8 +307,6 @@ public class SystemTrayManager : IDisposable
         Log.Information("SpendTracker tray shutting down");
         _updateTimer?.Stop();
         _updateTimer?.Dispose();
-        AutoUpdater.CheckForUpdateEvent -= OnCheckForUpdate;
-        AutoUpdater.ApplicationExitEvent -= OnApplicationExit;
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _disposed = true;

@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Events;
 using SpendTracker.Api;
+using SpendTracker.Api.Services;
 using SpendTracker.Api.Workers;
 using SpendTracker.Domain.Repositories;
 using SpendTracker.Domain.Services;
@@ -58,6 +59,7 @@ public class Program
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddOpenApi();
             builder.Services.AddHostedService<LogCleanupWorker>();
+            builder.Services.AddScoped<IUpdateChecker, UpdateChecker>();
 
             var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
                                    ?? "Data Source=spendtracker.db";
@@ -115,8 +117,9 @@ public class Program
                 var appUrl = "http://localhost:5000";
                 var prefs = UserPreferences.Load();
                 var manifestUrl = app.Configuration["UpdateManifestUrl"] ?? string.Empty;
+                var updateChecker = app.Services.GetRequiredService<IUpdateChecker>();
                 Log.Information("Loaded UpdateManifestUrl from config: {ManifestUrl}", string.IsNullOrEmpty(manifestUrl) ? "(empty)" : manifestUrl);
-                var context = new TrayApplicationContext(appUrl, app, prefs, manifestUrl);
+                var context = new TrayApplicationContext(appUrl, app, prefs, manifestUrl, updateChecker);
 
                 System.Windows.Forms.Application.Run(context);
             }
