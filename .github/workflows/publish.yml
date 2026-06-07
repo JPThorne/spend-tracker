@@ -52,41 +52,26 @@ jobs:
             -p:Version=${{ steps.version.outputs.version }} `
             -o publish/
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: SpendTracker ${{ steps.version.outputs.version }}
-          generate_release_notes: true
-          files: publish/SpendTracker.exe
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Velopack CLI
+        run: dotnet tool install -g vpk
 
-      - name: Update update manifest
-        shell: bash
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          TAG="${{ steps.version.outputs.tag }}"
-          cat > docs/update.xml << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <item>
-            <version>${VERSION}.0</version>
-            <url>https://github.com/JPThorne/spend-tracker/releases/download/${TAG}/SpendTracker.exe</url>
-            <changelog>https://github.com/JPThorne/spend-tracker/releases</changelog>
-            <mandatory>false</mandatory>
-          </item>
-          EOF
+      - name: Download previous release for delta generation
+        run: vpk download github --repoUrl https://github.com/${{ github.repository }} --token ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
 
-      - name: Commit and push manifest
-        shell: bash
+      - name: Pack with Velopack
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config core.safecrlf false
-          git add docs/update.xml
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: update manifest to ${{ steps.version.outputs.version }} [skip ci]"
-            git push origin main
-          else
-            echo "No changes to manifest"
-          fi
+          vpk pack `
+            --packId SpendTracker `
+            --packVersion ${{ steps.version.outputs.version }} `
+            --packDir publish/ `
+            --mainExe SpendTracker.exe
+
+      - name: Upload to GitHub Releases
+        run: |
+          vpk upload github `
+            --repoUrl https://github.com/${{ github.repository }} `
+            --publish `
+            --releaseName "SpendTracker ${{ steps.version.outputs.version }}" `
+            --tag ${{ steps.version.outputs.tag }} `
+            --token ${{ secrets.GITHUB_TOKEN }}

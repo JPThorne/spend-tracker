@@ -8,12 +8,12 @@ using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Events;
 using SpendTracker.Api;
-using SpendTracker.Api.Services;
 using SpendTracker.Api.Workers;
 using SpendTracker.Domain.Repositories;
 using SpendTracker.Domain.Services;
 using SpendTracker.Infrastructure.Data;
 using SpendTracker.Infrastructure.Repositories;
+using Velopack;
 
 namespace SpendTracker.Api;
 
@@ -22,6 +22,8 @@ public class Program
     [STAThread]
     public static async Task Main(string[] args)
     {
+        VelopackApp.Build().Run();
+
         var logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
         Directory.CreateDirectory(logDirectory);
 
@@ -43,9 +45,6 @@ public class Program
             Log.Information("SpendTracker {Version} starting up. Log directory: {LogDirectory}", version, logDirectory);
             Log.Information("Assembly version detected as: {Version}", version);
 
-            // Ensure updater tool is available before starting the app
-            UpdaterBootstrapper.EnsureUpdaterExists();
-
             var builder = WebApplication.CreateBuilder(args);
 
             builder.Configuration.Sources.Clear();
@@ -62,7 +61,6 @@ public class Program
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddOpenApi();
             builder.Services.AddHostedService<LogCleanupWorker>();
-            builder.Services.AddScoped<IUpdateChecker, UpdateChecker>();
 
             var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
                                    ?? "Data Source=spendtracker.db";
@@ -119,10 +117,7 @@ public class Program
 
                 var appUrl = "http://localhost:5000";
                 var prefs = UserPreferences.Load();
-                var manifestUrl = app.Configuration["UpdateManifestUrl"] ?? string.Empty;
-                var updateChecker = app.Services.GetRequiredService<IUpdateChecker>();
-                Log.Information("Loaded UpdateManifestUrl from config: {ManifestUrl}", string.IsNullOrEmpty(manifestUrl) ? "(empty)" : manifestUrl);
-                var context = new TrayApplicationContext(appUrl, app, prefs, manifestUrl, updateChecker);
+                var context = new TrayApplicationContext(appUrl, app, prefs);
 
                 System.Windows.Forms.Application.Run(context);
             }

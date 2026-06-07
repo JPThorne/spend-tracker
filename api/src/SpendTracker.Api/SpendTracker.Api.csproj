@@ -22,12 +22,12 @@
     <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
     <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
+    <PackageReference Include="Velopack" Version="1.2.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\SpendTracker.Domain\SpendTracker.Domain.csproj" />
     <ProjectReference Include="..\SpendTracker.Infrastructure\SpendTracker.Infrastructure.csproj" />
-    <ProjectReference Include="..\SpendTracker.Updater\SpendTracker.Updater.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -44,17 +44,5 @@
     </None>
   </ItemGroup>
 
-  <Target Name="BuildUpdater" BeforeTargets="Build">
-    <Exec Command="dotnet publish ..\SpendTracker.Updater\SpendTracker.Updater.csproj -c $(Configuration) -r win-x64 --self-contained -p:PublishSingleFile=true -p:PublishReadyToRun=true -o obj\updater_publish\" />
-  </Target>
-
-  <Target Name="IncludeUpdater" BeforeTargets="Build" AfterTargets="BuildUpdater">
-    <ItemGroup>
-      <EmbeddedResource Include="obj\updater_publish\SpendTrackerUpdater.exe">
-        <Link>Resources\SpendTrackerUpdater.exe</Link>
-        <LogicalName>SpendTracker.Api.Resources.SpendTrackerUpdater.exe</LogicalName>
-      </EmbeddedResource>
-    </ItemGroup>
-  </Target>
 
 </Project>

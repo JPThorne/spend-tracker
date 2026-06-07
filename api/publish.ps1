@@ -37,33 +37,46 @@ dotnet publish $ProjectPath `
     /p:PublishReadyToRun=true `
     /p:IncludeNativeLibrariesForSelfExtract=true
 
-if ($LASTEXITCODE -eq 0) {
-    Write-Host ""
-    Write-Host "=====================================" -ForegroundColor Green
-    Write-Host "  Build Successful!" -ForegroundColor Green
-    Write-Host "=====================================" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "Output location: $OutputPath" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "Files created:" -ForegroundColor Yellow
-    Get-ChildItem -Path $OutputPath -Filter "SpendTracker.*" | ForEach-Object {
-        $size = [math]::Round($_.Length / 1MB, 2)
-        Write-Host "  - $($_.Name) ($size MB)" -ForegroundColor Cyan
-    }
-    Write-Host ""
-    Write-Host "To run the application, double-click: SpendTracker.exe" -ForegroundColor Green
-    Write-Host ""
-    
-    # Check if database exists
-    $dbPath = Join-Path $OutputPath "spendtracker.db"
-    if (Test-Path $dbPath) {
-        Write-Host "Note: Existing database found and will be included." -ForegroundColor Yellow
-    }
-    else {
-        Write-Host "Note: Database will be created on first run." -ForegroundColor Yellow
-    }
-} else {
+if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "Build failed! Check the errors above." -ForegroundColor Red
     exit 1
+}
+
+# Read version from csproj for Velopack packaging
+$CsprojContent = Get-Content $ProjectPath -Raw
+if ($CsprojContent -match '<Version>([\d.]+)</Version>') {
+    $PackVersion = $Matches[1]
+} else {
+    $PackVersion = "1.0.0"
+}
+
+Write-Host ""
+Write-Host "Packaging with Velopack (version $PackVersion)..." -ForegroundColor Yellow
+
+$VpkAvailable = $null
+try { $VpkAvailable = (Get-Command vpk -ErrorAction Stop).Source } catch {}
+
+if ($null -eq $VpkAvailable) {
+    Write-Host "vpk CLI not found. Install it with: dotnet tool install -g vpk" -ForegroundColor Yellow
+    Write-Host "Skipping Velopack packaging — raw publish output is at: $OutputPath" -ForegroundColor Cyan
+} else {
+    vpk pack `
+        --packId SpendTracker `
+        --packVersion $PackVersion `
+        --packDir $OutputPath `
+        --mainExe SpendTracker.exe
+
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host ""
+        Write-Host "=====================================" -ForegroundColor Green
+        Write-Host "  Build & Package Successful!" -ForegroundColor Green
+        Write-Host "=====================================" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "Installer:  Releases\SpendTracker-$PackVersion-Setup.exe" -ForegroundColor Cyan
+        Write-Host "Portable:   Releases\SpendTracker-$PackVersion-portable.zip" -ForegroundColor Cyan
+    } else {
+        Write-Host "Velopack packaging failed! Check the errors above." -ForegroundColor Red
+        exit 1
+    }
 }
