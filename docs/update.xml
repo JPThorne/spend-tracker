@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <item>
-  <version>1.0.24.0</version>
-  <url>https://github.com/JPThorne/spend-tracker/releases/download/v1.0.24/SpendTracker.exe</url>
+  <version>1.0.25.0</version>
+  <url>https://github.com/JPThorne/spend-tracker/releases/download/v1.0.25/SpendTracker.exe</url>
   <changelog>https://github.com/JPThorne/spend-tracker/releases</changelog>
   <mandatory>false</mandatory>
 </item>
