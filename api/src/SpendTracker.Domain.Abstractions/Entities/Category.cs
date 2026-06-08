@@ -6,5 +6,6 @@ public class Category
     public required string Name { get; set; }
     public string? Description { get; set; }
     public DateTime CreatedDate { get; set; }
+    public int SortOrder { get; set; }
     public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 }

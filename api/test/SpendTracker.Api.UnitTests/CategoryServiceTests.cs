@@ -38,7 +38,7 @@ public class CategoryServiceTests
     }
 
     [Fact]
-    public async Task DeleteAsync_WithTransactions_ReturnsValidationError()
+    public async Task DeleteAsync_WithTransactions_Succeeds()
     {
         var category = new Category
         {
@@ -48,12 +48,13 @@ public class CategoryServiceTests
 
         var repository = new Mock<ICategoryRepository>(MockBehavior.Strict);
         repository.Setup(r => r.GetByIdAsync(3)).ReturnsAsync(category);
+        repository.Setup(r => r.DeleteAsync(category)).Returns(Task.CompletedTask);
+        repository.Setup(r => r.SaveChangesAsync()).ReturnsAsync(1);
 
         var service = new CategoryService(repository.Object);
 
         var result = await service.DeleteAsync(3);
 
-        Assert.False(result.Success);
-        Assert.Equal(ServiceErrorType.Validation, result.Error?.Type);
+        Assert.True(result.Success);
     }
 }

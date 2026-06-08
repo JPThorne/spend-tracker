@@ -6,7 +6,8 @@ public record CategoryDto(
     string? Description,
     DateTime CreatedDate,
     int TransactionCount,
-    decimal TotalSpending
+    decimal TotalSpending,
+    int SortOrder
 );
 
 public record CreateCategoryDto(
@@ -17,4 +18,9 @@ public record CreateCategoryDto(
 public record UpdateCategoryDto(
     string Name,
     string? Description
+);
+
+public record ReorderCategoryDto(
+    int Id,
+    int SortOrder
 );

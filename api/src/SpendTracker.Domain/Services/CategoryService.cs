@@ -31,7 +31,8 @@ public class CategoryService(ICategoryRepository categoryRepository) : ICategory
                 category.Description,
                 category.CreatedDate,
                 transactionList.Count,
-                transactionList.Where(t => t.Debit.HasValue).Sum(t => t.Debit!.Value)
+                transactionList.Where(t => t.Debit.HasValue).Sum(t => t.Debit!.Value),
+                category.SortOrder
             );
         });
 
@@ -52,7 +53,8 @@ public class CategoryService(ICategoryRepository categoryRepository) : ICategory
             category.Description,
             category.CreatedDate,
             category.Transactions.Count,
-            category.Transactions.Where(t => t.Debit.HasValue).Sum(t => t.Debit!.Value)
+            category.Transactions.Where(t => t.Debit.HasValue).Sum(t => t.Debit!.Value),
+            category.SortOrder
         );
 
         return ServiceResult<CategoryDto>.Ok(categoryDto);
@@ -151,11 +153,14 @@ public class CategoryService(ICategoryRepository categoryRepository) : ICategory
             return ServiceResult<CategoryDto>.Fail(ServiceErrorType.Conflict, $"Category with name '{createDto.Name}' already exists");
         }
 
+        var sortOrder = await categoryRepository.GetNextSortOrderAsync();
+
         var category = new Category
         {
             Name = createDto.Name,
             Description = createDto.Description,
-            CreatedDate = DateTime.UtcNow
+            CreatedDate = DateTime.UtcNow,
+            SortOrder = sortOrder,
         };
 
         await categoryRepository.AddAsync(category);
@@ -167,7 +172,8 @@ public class CategoryService(ICategoryRepository categoryRepository) : ICategory
             category.Description,
             category.CreatedDate,
             0,
-            0
+            0,
+            category.SortOrder
         );
 
         return ServiceResult<CategoryDto>.Ok(categoryDto);
@@ -199,7 +205,8 @@ public class CategoryService(ICategoryRepository categoryRepository) : ICategory
             category.Description,
             category.CreatedDate,
             category.Transactions.Count,
-            category.Transactions.Where(t => t.Debit.HasValue).Sum(t => t.Debit!.Value)
+            category.Transactions.Where(t => t.Debit.HasValue).Sum(t => t.Debit!.Value),
+            category.SortOrder
         );
 
         return ServiceResult<CategoryDto>.Ok(categoryDto);
@@ -213,16 +220,15 @@ public class CategoryService(ICategoryRepository categoryRepository) : ICategory
             return ServiceResult<bool>.Fail(ServiceErrorType.NotFound, $"Category with ID {id} not found");
         }
 
-        if (category.Transactions.Count > 0)
-        {
-            return ServiceResult<bool>.Fail(
-                ServiceErrorType.Validation,
-                $"Cannot delete category '{category.Name}' because it has {category.Transactions.Count} associated transactions. Please reassign or remove these transactions first.");
-        }
-
         await categoryRepository.DeleteAsync(category);
         await categoryRepository.SaveChangesAsync();
 
+        return ServiceResult<bool>.Ok(true);
+    }
+
+    public async Task<ServiceResult<bool>> ReorderAsync(IEnumerable<ReorderCategoryDto> items)
+    {
+        await categoryRepository.ReorderAsync(items);
         return ServiceResult<bool>.Ok(true);
     }
 }

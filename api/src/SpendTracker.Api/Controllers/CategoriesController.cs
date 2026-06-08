@@ -100,6 +100,13 @@ public class CategoriesController(
         return Ok(result.Value);
     }
 
+    [HttpPatch("reorder")]
+    public async Task<ActionResult> ReorderCategories([FromBody] IEnumerable<ReorderCategoryDto> items)
+    {
+        await categoryService.ReorderAsync(items);
+        return NoContent();
+    }
+
     [HttpDelete("{id:int}")]
     public async Task<ActionResult> DeleteCategory(int id)
     {

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SpendTracker.Domain.Entities;
+using SpendTracker.Domain.Models;
 using SpendTracker.Domain.Repositories;
 using SpendTracker.Infrastructure.Data;
 
@@ -33,8 +34,8 @@ public class CategoryRepository(SpendTrackerDbContext context) : Repository<Cate
     public async Task<Dictionary<int, decimal>> GetMonthlySpendingByCategoryIdAsync(int categoryId, int year)
     {
         var transactions = await Context.Transactions
-            .Where(t => t.CategoryId == categoryId && 
-                       t.TransactionDate.Year == year && 
+            .Where(t => t.CategoryId == categoryId &&
+                       t.TransactionDate.Year == year &&
                        t.Debit.HasValue)
             .ToListAsync();
 
@@ -46,11 +47,27 @@ public class CategoryRepository(SpendTrackerDbContext context) : Repository<Cate
             );
     }
 
+    public async Task<int> GetNextSortOrderAsync()
+    {
+        var max = await Context.Categories.MaxAsync(c => (int?)c.SortOrder);
+        return (max ?? -1) + 1;
+    }
+
+    public async Task ReorderAsync(IEnumerable<ReorderCategoryDto> items)
+    {
+        foreach (var item in items)
+        {
+            await Context.Categories
+                .Where(c => c.Id == item.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.SortOrder, item.SortOrder));
+        }
+    }
+
     public override async Task<IEnumerable<Category>> GetAllAsync()
     {
         return await Context.Categories
             .Include(c => c.Transactions)
-            .OrderBy(c => c.Name)
+            .OrderBy(c => c.SortOrder)
             .ToListAsync();
     }
 

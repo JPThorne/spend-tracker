@@ -12,4 +12,5 @@ public interface ICategoryService
     Task<ServiceResult<CategoryDto>> CreateAsync(CreateCategoryDto createDto);
     Task<ServiceResult<CategoryDto>> UpdateAsync(int id, UpdateCategoryDto updateDto);
     Task<ServiceResult<bool>> DeleteAsync(int id);
+    Task<ServiceResult<bool>> ReorderAsync(IEnumerable<ReorderCategoryDto> items);
 }

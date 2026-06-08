@@ -1,1010 +1,979 @@
-// ── Configuration ────────────────────────────────────────────────────────────
-const API_URL = 'http://localhost:5000/api';
+// =============================================================================
+// Spend — application logic
+// =============================================================================
+// Single-file vanilla JS. No build step. Hash-routed views, keyboard control,
+// drawer + modal. Data loaded from /api on init; all mutations persisted.
+// =============================================================================
 
-// ── State ─────────────────────────────────────────────────────────────────────
-let categories = [];           // All categories – used for management & dropdowns
-let analyticsCategories = [];  // Date-filtered – used only for the spending analytics cards
-let transactions = [];         // Uncategorised transactions
-let selectedTransactions = new Set();
-let currentView = 'categorize';
-let expandedCategories = new Set();
-let categoryTransactions = {};
-let selectedDateRange = { preset: 'this-month', startDate: null, endDate: null };
-let previousPeriodData = null;
-let transactionSearchTerm = '';
-let pickerTargetTransactionId = null; // null = bulk mode, number = single transaction
-
-// ── Category colour palette ───────────────────────────────────────────────────
-const CATEGORY_COLORS = [
-    '#667eea', '#e96c1c', '#e91c6b', '#43c59e', '#4facfe',
-    '#a855f7', '#22d3ee', '#f59e0b', '#ec4899', '#6366f1',
-    '#10b981', '#3b82f6', '#8b5cf6', '#f97316', '#14b8a6',
-    '#84cc16', '#ef4444', '#06b6d4', '#eab308', '#6b7280',
-];
-
-function getCategoryColor(categoryId) {
-    return CATEGORY_COLORS[(categoryId - 1) % CATEGORY_COLORS.length];
-}
-
-// ── DOM references ────────────────────────────────────────────────────────────
-const elements = {
-    mainContent:           document.getElementById('mainContent'),
-    loading:               document.getElementById('loading'),
-    categoryList:          document.getElementById('categoryList'),
-    transactionTableBody:  document.getElementById('transactionTableBody'),
-    selectAll:             document.getElementById('selectAll'),
-    categorizeSelectedBtn: document.getElementById('categorizeSelectedBtn'),
-    selectedCount:         document.getElementById('selectedCount'),
-    addCategoryBtn:        document.getElementById('addCategoryBtn'),
-    categoryModal:         document.getElementById('categoryModal'),
-    categoryForm:          document.getElementById('categoryForm'),
-    modalClose:            document.getElementById('modalClose'),
-    cancelBtn:             document.getElementById('cancelBtn'),
-    categoryName:          document.getElementById('categoryName'),
-    categoryDescription:   document.getElementById('categoryDescription'),
-    modalTitle:            document.getElementById('modalTitle'),
-    csvFileInput:          document.getElementById('csvFile'),
-    uploadBtn:             document.getElementById('uploadBtn'),
-    transactionSearch:     document.getElementById('transactionSearch'),
+// -----------------------------------------------------------------------------
+// State
+// -----------------------------------------------------------------------------
+const state = {
+  /** @type {Category[]} */ categories: [],
+  /** @type {Txn[]}      */ transactions: [],
+  currentMonth: '',
+  filter: 'all',
+  /** focused row id on the Categorize page */
+  focusedId: null,
+  /** undo stack for category assignments */
+  undo: [],
+  /** count of categorizations made this session (for the progress bar) */
+  sessionDone: 0,
 };
 
-// ── Startup ───────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', async () => {
-    try {
-        showLoading();
-        await loadCategories();
-        await loadTransactions();
+// Color palette for categories (cycled by index)
+const CAT_PALETTE = ['cat-1','cat-2','cat-3','cat-4','cat-5','cat-6','cat-7','cat-8'];
 
-        const connectionPanel = document.getElementById('connectionPanel');
-        if (connectionPanel) connectionPanel.style.display = 'none';
+// -----------------------------------------------------------------------------
+// Data helpers
+// -----------------------------------------------------------------------------
 
-        if (elements.mainContent) elements.mainContent.style.display = 'block';
-
-        const viewTabs = document.getElementById('viewTabs');
-        if (viewTabs) viewTabs.style.display = 'flex';
-
-        hideLoading();
-    } catch (err) {
-        console.error('Startup error:', err);
-        showError('Failed to connect to local server: ' + err.message);
-        hideLoading();
-    }
-
-    try {
-        const info = await apiRequest('/info');
-        if (info?.version) {
-            const el = document.getElementById('appVersion');
-            if (el) el.textContent = `SpendTracker v${info.version}`;
-        }
-    } catch (_) { /* version is non-critical */ }
-});
-
-// ── API helper ────────────────────────────────────────────────────────────────
-async function apiRequest(endpoint, method = 'GET', body = null) {
-    const options = { method, headers: {} };
-
-    if (body && !(body instanceof FormData)) {
-        options.headers['Content-Type'] = 'application/json';
-        options.body = JSON.stringify(body);
-    } else if (body instanceof FormData) {
-        options.body = body;
-    }
-
-    const response = await fetch(`${API_URL}${endpoint}`, options);
-
-    if (response.status === 204) return null;
-
-    if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || `HTTP ${response.status}`);
-    }
-
-    return response.json();
+function mapTxn(t) {
+  return {
+    id: t.id,
+    date: t.transactionDate.substring(0, 10),
+    desc: t.description,
+    // negative = debit/expense; positive = credit/income
+    amount: t.credit != null ? t.credit : -(t.debit ?? 0),
+    categoryId: t.categoryId ?? null,
+  };
 }
 
-// ── Data loaders ──────────────────────────────────────────────────────────────
-async function loadCategories() {
-    try {
-        const data = await apiRequest('/categories');
-        if (!data) return;
-        categories = data;
-        renderCategories();
-    } catch (err) {
-        console.error('Error loading categories:', err);
-        showError('Failed to load categories: ' + err.message);
-    }
+function sixMonthsAgoDate() {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 6);
+  return d.toISOString().substring(0, 10);
 }
 
-async function loadTransactions() {
-    try {
-        showLoading();
-        const data = await apiRequest('/transactions?uncategorized=true');
-        if (!data) { hideLoading(); return; }
-        transactions = data;
-        renderTransactions();
-        hideLoading();
-    } catch (err) {
-        console.error('Error loading transactions:', err);
-        showError('Failed to load transactions: ' + err.message);
-        hideLoading();
-    }
+// -----------------------------------------------------------------------------
+// "API" — real fetch calls to the backend
+// -----------------------------------------------------------------------------
+const api = {
+  async categorize(txnId, categoryId) {
+    const txn = state.transactions.find(t => t.id === txnId);
+    if (!txn) return;
+    const prev = txn.categoryId;
+    state.undo.push({ txnId, prev });
+    if (state.undo.length > 50) state.undo.shift();
+
+    await fetch(`/api/transactions/${txnId}/category`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ categoryId }),
+    });
+
+    txn.categoryId = categoryId;
+    if (prev == null && categoryId != null) state.sessionDone++;
+  },
+
+  async addCategory(name) {
+    const res = await fetch('/api/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description: null }),
+    });
+    const dto = await res.json();
+    const color = `var(--${CAT_PALETTE[state.categories.length % CAT_PALETTE.length]})`;
+    const cat = { id: dto.id, name: dto.name, color };
+    state.categories.push(cat);
+    return cat;
+  },
+
+  async renameCategory(id, name) {
+    await fetch(`/api/categories/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description: null }),
+    });
+    const cat = state.categories.find(c => c.id === id);
+    if (cat) cat.name = name;
+  },
+
+  async deleteCategory(id) {
+    await fetch(`/api/categories/${id}`, { method: 'DELETE' });
+    const idx = state.categories.findIndex(c => c.id === id);
+    if (idx >= 0) state.categories.splice(idx, 1);
+    state.transactions.forEach(t => { if (t.categoryId === id) t.categoryId = null; });
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+const $ = sel => document.querySelector(sel);
+const $$ = sel => document.querySelectorAll(sel);
+
+function fmtMoney(n, opts = {}) {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '−' : n > 0 ? (opts.signed ? '+' : '') : '';
+  const rounded = abs >= 1000 ? Math.round(abs) : (Math.round(abs * 100) / 100);
+  const str = abs >= 1000 ? rounded.toLocaleString('en-ZA') : rounded.toFixed(2);
+  return `${sign}R ${str}`;
 }
 
-// ── Render: category management list ─────────────────────────────────────────
-function renderCategories() {
-    if (!elements.categoryList) return;
-
-    if (categories.length === 0) {
-        elements.categoryList.innerHTML = '<p class="empty-state">No categories yet. Click &ldquo;+ Add Category&rdquo; to create one.</p>';
-        return;
-    }
-
-    const sorted = [...categories].sort((a, b) => a.name.localeCompare(b.name));
-
-    elements.categoryList.innerHTML = sorted.map(cat => {
-        const color = getCategoryColor(cat.id);
-        return `
-            <div class="category-card">
-                <span class="category-color-dot" style="background:${color}"></span>
-                <span class="category-card-name">${cat.name}</span>
-                <span class="category-card-count">${cat.transactionCount} txn${cat.transactionCount !== 1 ? 's' : ''}</span>
-                <div class="category-actions">
-                    <button class="btn-icon" onclick="editCategory(${cat.id})" title="Edit">✏️</button>
-                    <button class="btn-icon" onclick="deleteCategory(${cat.id})" title="Delete">🗑️</button>
-                </div>
-            </div>
-        `;
-    }).join('');
+function fmtMonthLabel(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return `${MONTH_NAMES[m - 1]} ${y}`;
 }
 
-// ── Render: uncategorised transactions table ──────────────────────────────────
-function renderTransactions() {
-    if (!elements.transactionTableBody) return;
+function prevMonth(ym) {
+  let [y, m] = ym.split('-').map(Number);
+  m--; if (m < 1) { m = 12; y--; }
+  return `${y}-${String(m).padStart(2,'0')}`;
+}
+function nextMonth(ym) {
+  let [y, m] = ym.split('-').map(Number);
+  m++; if (m > 12) { m = 1; y++; }
+  return `${y}-${String(m).padStart(2,'0')}`;
+}
 
-    const filtered = transactionSearchTerm
-        ? transactions.filter(t => t.description.toLowerCase().includes(transactionSearchTerm))
-        : transactions;
+function txnsInMonth(ym) {
+  return state.transactions.filter(t => t.date.startsWith(ym));
+}
+function spendIn(ym, predicate) {
+  return txnsInMonth(ym)
+    .filter(t => t.amount < 0 && (!predicate || predicate(t)))
+    .reduce((s, t) => s + Math.abs(t.amount), 0);
+}
 
-    if (filtered.length === 0) {
-        const msg = transactionSearchTerm
-            ? 'No transactions match your filter.'
-            : 'All transactions have been categorised. Great work! 🎉';
-        elements.transactionTableBody.innerHTML = `
-            <tr><td colspan="5" class="empty-state">${msg}</td></tr>
-        `;
-        return;
-    }
-
-    elements.transactionTableBody.innerHTML = filtered.map(t => {
-        const desc = t.description.length > 60
-            ? t.description.substring(0, 60) + '…'
-            : t.description;
-        return `
-            <tr data-id="${t.id}">
-                <td class="col-check">
-                    <input type="checkbox" class="transaction-checkbox" data-id="${t.id}">
-                </td>
-                <td class="col-date">${formatDate(t.transactionDate)}</td>
-                <td class="col-desc" title="${escapeHtml(t.description)}">${escapeHtml(desc)}</td>
-                <td class="col-amount">${formatAmount(t.debit, t.credit)}</td>
-                <td class="col-actions">
-                    <button class="btn btn-sm btn-assign" onclick="openCategoryPicker(${t.id})">
-                        Assign
-                    </button>
-                    <button class="btn-icon" onclick="deleteTransaction(${t.id})" title="Delete">🗑️</button>
-                </td>
-            </tr>
-        `;
-    }).join('');
-
-    document.querySelectorAll('.transaction-checkbox').forEach(cb => {
-        cb.addEventListener('change', updateSelectedTransactions);
+function pendingTxns() {
+  // For categorize view: ALL uncategorized debits (any month), most recent first
+  return state.transactions
+    .filter(t => t.categoryId == null && t.amount < 0)
+    .filter(t => {
+      if (state.filter === 'this-month') return t.date.startsWith(state.currentMonth);
+      if (state.filter === 'last-month') return t.date.startsWith(prevMonth(state.currentMonth));
+      return true;
     });
 }
 
-// ── Transaction search ────────────────────────────────────────────────────────
-window.onTransactionSearch = function () {
-    transactionSearchTerm = (elements.transactionSearch?.value ?? '').toLowerCase();
-    renderTransactions();
-};
-
-// ── Selection state ───────────────────────────────────────────────────────────
-function updateSelectedTransactions() {
-    selectedTransactions.clear();
-    document.querySelectorAll('.transaction-checkbox:checked').forEach(cb => {
-        selectedTransactions.add(parseInt(cb.dataset.id));
-    });
-
-    if (elements.selectedCount) elements.selectedCount.textContent = selectedTransactions.size;
-    if (elements.categorizeSelectedBtn) {
-        elements.categorizeSelectedBtn.disabled = selectedTransactions.size === 0;
-    }
-
-    const all = document.querySelectorAll('.transaction-checkbox');
-    const checked = document.querySelectorAll('.transaction-checkbox:checked');
-    if (elements.selectAll) {
-        elements.selectAll.checked = all.length > 0 && all.length === checked.length;
-    }
+function totalPendingCount() {
+  return state.transactions.filter(t => t.categoryId == null && t.amount < 0).length;
 }
 
-// ── Category picker ───────────────────────────────────────────────────────────
-window.openCategoryPicker = function (transactionId) {
-    pickerTargetTransactionId = transactionId !== undefined ? transactionId : null;
-
-    const modal   = document.getElementById('categoryPickerModal');
-    const title   = document.getElementById('pickerModalTitle');
-    const search  = document.getElementById('categoryPickerSearch');
-
-    if (title) {
-        title.textContent = pickerTargetTransactionId !== null
-            ? 'Assign Category'
-            : `Assign Category to ${selectedTransactions.size} Transaction${selectedTransactions.size !== 1 ? 's' : ''}`;
-    }
-    if (search) search.value = '';
-    renderCategoryPicker('');
-    if (modal)  modal.style.display = 'flex';
-    if (search) search.focus();
+// -----------------------------------------------------------------------------
+// Icons (inline SVG factory)
+// -----------------------------------------------------------------------------
+const icons = {
+  pencil: () => `<svg viewBox="0 0 16 16" class="i"><path d="M2.5 13.5L3 11l7-7 2.5 2.5-7 7L3 14l-.5-.5z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/></svg>`,
+  trash:  () => `<svg viewBox="0 0 16 16" class="i"><path d="M3 4h10M6.5 4V2.5h3V4M4 4l.5 9.5a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1L12 4M6.5 7v5M9.5 7v5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  check:  () => `<svg viewBox="0 0 16 16" class="i"><path d="M3 8.5L6.5 12L13 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  grip:   () => `<svg viewBox="0 0 16 16" class="i"><circle cx="6" cy="4" r="1" fill="currentColor"/><circle cx="10" cy="4" r="1" fill="currentColor"/><circle cx="6" cy="8" r="1" fill="currentColor"/><circle cx="10" cy="8" r="1" fill="currentColor"/><circle cx="6" cy="12" r="1" fill="currentColor"/><circle cx="10" cy="12" r="1" fill="currentColor"/></svg>`,
+  trend:  (dir) => {
+    if (dir > 0) return `↑`;
+    if (dir < 0) return `↓`;
+    return `·`;
+  },
 };
 
-function renderCategoryPicker(searchTerm) {
-    const grid = document.getElementById('categoryPickerGrid');
-    if (!grid) return;
+// -----------------------------------------------------------------------------
+// Routing — hash-based
+// -----------------------------------------------------------------------------
+function currentRoute() {
+  const h = (location.hash || '#/spend').replace(/^#\/?/, '');
+  return h.split('/')[0] || 'spend';
+}
 
-    const term = (searchTerm ?? '').toLowerCase();
-    const filtered = term
-        ? categories.filter(c => c.name.toLowerCase().includes(term))
-        : categories;
+function goto(route) {
+  location.hash = '#/' + route;
+}
 
-    const tiles = filtered.map(cat => {
-        const color = getCategoryColor(cat.id);
-        return `
-            <button class="category-tile" onclick="assignCategoryFromPicker(${cat.id})"
-                    style="background:${color}; border-color:${color};">
-                ${escapeHtml(cat.name)}
-            </button>
-        `;
-    }).join('');
+function applyRoute() {
+  const r = currentRoute();
+  // toggle views
+  $$('#view-spend, #view-categorize').forEach(v => {
+    v.hidden = !v.id.endsWith(r);
+  });
+  // toggle nav active state
+  $$('.nav-item[data-route]').forEach(a => {
+    a.classList.toggle('is-active', a.dataset.route === r);
+  });
+  // render the active one
+  if (r === 'spend') renderSpend();
+  if (r === 'categorize') renderCategorize();
+}
 
-    const newBtn = `
-        <button class="category-tile category-tile-new" onclick="openAddCategoryFromPicker()">
-            + New Category
-        </button>
+// -----------------------------------------------------------------------------
+// Render — Sidebar
+// -----------------------------------------------------------------------------
+function renderSidebar() {
+  const pending = totalPendingCount();
+  const badge = $('#navPendingBadge');
+  badge.textContent = pending;
+  badge.dataset.empty = pending === 0 ? 'true' : 'false';
+}
+
+// -----------------------------------------------------------------------------
+// Render — Spend view
+// -----------------------------------------------------------------------------
+function renderSpend() {
+  const ym = state.currentMonth;
+  const prevYm = prevMonth(ym);
+
+  // Month label
+  $('#monthLabel').textContent = fmtMonthLabel(ym);
+
+  // Subtitle
+  const today = new Date();
+  $('#spendSubtitle').textContent = `${fmtMonthLabel(ym)} so far · ${pendingTxns().length} txns still uncategorized`;
+
+  // Hero
+  const total = spendIn(ym);
+  $('#heroTotal').textContent = fmtMoney(-total);
+  $('#heroTotal').classList.remove('tabular');
+
+  const prevTotal = spendIn(prevYm);
+  const delta = total - prevTotal;
+  const deltaEl = $('#heroDelta');
+  deltaEl.className = 'hero-delta';
+  if (prevTotal === 0) {
+    deltaEl.classList.add('delta-flat');
+    deltaEl.innerHTML = `<span class="delta-icon">·</span> No comparison yet for ${fmtMonthLabel(prevYm)}`;
+  } else {
+    const pct = Math.round(Math.abs(delta) / prevTotal * 100);
+    const up = delta > 0;
+    deltaEl.classList.add(up ? 'delta-up' : delta < 0 ? 'delta-down' : 'delta-flat');
+    deltaEl.innerHTML = `
+      <span class="delta-icon">${up ? '↑' : delta < 0 ? '↓' : '·'}</span>
+      <span>${up ? '+' : delta < 0 ? '−' : ''}${fmtMoney(Math.abs(delta)).replace('R ', 'R ')} (${pct}%) vs. ${fmtMonthLabel(prevYm)}</span>
     `;
+  }
 
-    grid.innerHTML = tiles + newBtn;
+  // Sparkline (last 6 months including current)
+  renderSparkline(ym);
+
+  // Stat strip
+  renderStatStrip(ym, prevYm);
+
+  // Category breakdown
+  renderCategoryBars(ym, prevYm);
+
+  // Biggest this month
+  renderBiggest(ym);
 }
 
-window.onCategoryPickerSearch = function () {
-    const val = document.getElementById('categoryPickerSearch')?.value ?? '';
-    renderCategoryPicker(val);
-};
+function renderSparkline(ym) {
+  const months = [];
+  let cur = ym;
+  for (let i = 0; i < 6; i++) {
+    months.unshift(cur);
+    cur = prevMonth(cur);
+  }
+  const totals = months.map(m => spendIn(m));
+  const max = Math.max(1, ...totals);
 
-window.assignCategoryFromPicker = async function (categoryId) {
-    document.getElementById('categoryPickerModal').style.display = 'none';
+  const svg = $('#spark');
+  const w = 320, h = 80, pad = 6;
+  const stepX = (w - pad * 2) / (totals.length - 1);
+  const pts = totals.map((t, i) => {
+    const x = pad + i * stepX;
+    const y = pad + (h - pad * 2) * (1 - t / max);
+    return [x, y];
+  });
 
-    if (pickerTargetTransactionId !== null) {
-        await categorizeSingle(pickerTargetTransactionId, categoryId);
-    } else {
-        await categorizeBulk(categoryId);
+  const lineD = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+  const areaD = `${lineD} L ${pts[pts.length-1][0]},${h} L ${pts[0][0]},${h} Z`;
+
+  // Gridlines: 0, 50%, 100%
+  const grid = `
+    <line class="grid" x1="${pad}" x2="${w - pad}" y1="${pad}"           y2="${pad}"/>
+    <line class="grid" x1="${pad}" x2="${w - pad}" y1="${h / 2}"          y2="${h / 2}"/>
+    <line class="grid" x1="${pad}" x2="${w - pad}" y1="${h - pad}"        y2="${h - pad}"/>
+  `;
+
+  const last = pts[pts.length - 1];
+  svg.innerHTML = `
+    ${grid}
+    <path class="area" d="${areaD}"/>
+    <path class="line" d="${lineD}"/>
+    <circle class="dot-stroke" cx="${last[0]}" cy="${last[1]}" r="5"/>
+    <circle class="dot" cx="${last[0]}" cy="${last[1]}" r="3.2"/>
+  `;
+
+  $('#chartAxisRange').textContent = `peak ${fmtMoney(max).replace('R ', 'R ')}`;
+  $('#chartAxisLabels').innerHTML = months.map(m => {
+    const [, mm] = m.split('-');
+    const lbl = MONTH_NAMES[parseInt(mm, 10) - 1].toLowerCase();
+    return `<span class="${m === ym ? 'is-current' : ''}">${lbl}</span>`;
+  }).join('');
+}
+
+function renderStatStrip(ym, prevYm) {
+  const txns = txnsInMonth(ym).filter(t => t.amount < 0);
+
+  // Biggest single
+  const biggest = txns.slice().sort((a, b) => a.amount - b.amount)[0];
+
+  // Per-category totals
+  const byCat = {};
+  for (const t of txns) {
+    if (!t.categoryId) continue;
+    byCat[t.categoryId] = (byCat[t.categoryId] || 0) + Math.abs(t.amount);
+  }
+  const prevByCat = {};
+  for (const t of txnsInMonth(prevYm)) {
+    if (t.amount >= 0 || !t.categoryId) continue;
+    prevByCat[t.categoryId] = (prevByCat[t.categoryId] || 0) + Math.abs(t.amount);
+  }
+
+  // Trending up: category with biggest % increase (min R200 in prev to avoid noise)
+  let trendingId = null, trendingPct = -Infinity;
+  for (const cat of state.categories) {
+    const prev = prevByCat[cat.id] || 0;
+    const curr = byCat[cat.id] || 0;
+    if (prev < 200) continue;
+    const pct = (curr - prev) / prev;
+    if (pct > trendingPct) { trendingPct = pct; trendingId = cat.id; }
+  }
+  const trendingCat = trendingId ? state.categories.find(c => c.id === trendingId) : null;
+
+  // Most txns: category by count
+  const countByCat = {};
+  for (const t of txns) {
+    if (!t.categoryId) continue;
+    countByCat[t.categoryId] = (countByCat[t.categoryId] || 0) + 1;
+  }
+  let mostId = null, mostCount = 0;
+  for (const [id, c] of Object.entries(countByCat)) {
+    if (c > mostCount) { mostCount = c; mostId = Number(id); }
+  }
+  const mostCat = mostId ? state.categories.find(c => c.id === mostId) : null;
+
+  // To categorize
+  const pendingInMonth = txnsInMonth(ym).filter(t => t.categoryId == null && t.amount < 0).length;
+
+  const stats = [
+    biggest && {
+      label: 'Biggest charge',
+      value: fmtMoney(biggest.amount).replace('−', ''),
+      sub: `${biggest.desc.slice(0, 24)} · ${shortDate(biggest.date)}`,
+    },
+    trendingCat && {
+      label: 'Trending up',
+      value: trendingCat.name,
+      sub: `<span class="delta-up" style="color:var(--danger); font-weight:600">+${Math.round(trendingPct * 100)}%</span> vs ${fmtMonthLabel(prevYm)}`,
+      dot: trendingCat.color,
+    },
+    mostCat && {
+      label: 'Most transactions',
+      value: mostCat.name,
+      sub: `${mostCount} this month`,
+      dot: mostCat.color,
+    },
+    {
+      label: 'To categorize',
+      value: String(pendingInMonth),
+      sub: `<a class="stat-cta" href="#/categorize">Open inbox →</a>`,
+      pending: true,
+    },
+  ].filter(Boolean);
+
+  $('#statStrip').innerHTML = stats.map(s => `
+    <article class="stat ${s.pending ? 'stat-pending' : ''}">
+      <div class="stat-label">${s.label}</div>
+      <div class="stat-value">${s.value}</div>
+      <div class="stat-sub">${s.dot ? `<span class="cat-pill-dot" style="background:${s.dot}; width:7px; height:7px; border-radius:999px"></span>` : ''}${s.sub}</div>
+    </article>
+  `).join('');
+}
+
+function shortDate(d) {
+  const [, m, day] = d.split('-');
+  return `${parseInt(day, 10)} ${MONTH_NAMES[parseInt(m, 10) - 1]}`;
+}
+
+function renderCategoryBars(ym, prevYm) {
+  const byCat = {};
+  for (const t of txnsInMonth(ym)) {
+    if (t.amount >= 0 || !t.categoryId) continue;
+    byCat[t.categoryId] = (byCat[t.categoryId] || 0) + Math.abs(t.amount);
+  }
+  const prevByCat = {};
+  for (const t of txnsInMonth(prevYm)) {
+    if (t.amount >= 0 || !t.categoryId) continue;
+    prevByCat[t.categoryId] = (prevByCat[t.categoryId] || 0) + Math.abs(t.amount);
+  }
+  const rows = state.categories
+    .map(c => ({ cat: c, curr: byCat[c.id] || 0, prev: prevByCat[c.id] || 0 }))
+    .sort((a, b) => b.curr - a.curr);
+
+  const max = Math.max(1, ...rows.map(r => r.curr));
+
+  $('#catBars').innerHTML = rows.map(r => {
+    const pct = r.curr / max;
+    let deltaHtml = '<span class="muted">·</span>';
+    if (r.prev > 0) {
+      const dpct = Math.round((r.curr - r.prev) / r.prev * 100);
+      const cls = dpct > 5 ? 'delta-up' : dpct < -5 ? 'delta-down' : 'delta-flat';
+      const arrow = dpct > 5 ? '↑' : dpct < -5 ? '↓' : '·';
+      deltaHtml = `<span class="${cls}" style="font-weight:500">${arrow}${Math.abs(dpct)}%</span>`;
+    } else if (r.curr > 0) {
+      deltaHtml = `<span class="delta-flat" style="font-weight:500">new</span>`;
     }
-};
-
-window.openAddCategoryFromPicker = function () {
-    document.getElementById('categoryPickerModal').style.display = 'none';
-
-    elements.modalTitle.textContent = 'Add Category';
-    elements.categoryForm.reset();
-    elements.categoryForm.dataset.mode = 'add';
-    elements.categoryForm.dataset.returnToPicker = 'true';
-    delete elements.categoryForm.dataset.id;
-    elements.categoryModal.style.display = 'flex';
-    setTimeout(() => elements.categoryName?.focus(), 50);
-};
-
-// ── Categorisation ────────────────────────────────────────────────────────────
-async function categorizeSingle(transactionId, categoryId) {
-    try {
-        showLoading();
-        await apiRequest(`/transactions/${transactionId}/category`, 'PUT', { categoryId });
-
-        const row = document.querySelector(`tr[data-id="${transactionId}"]`);
-        if (row) row.remove();
-        transactions = transactions.filter(t => t.id !== transactionId);
-        selectedTransactions.delete(transactionId);
-        updateSelectedTransactions();
-
-        // Show empty state if the filtered list is now empty
-        const visibleCount = transactionSearchTerm
-            ? transactions.filter(t => t.description.toLowerCase().includes(transactionSearchTerm)).length
-            : transactions.length;
-        if (visibleCount === 0) renderTransactions();
-
-        loadCategories(); // background refresh of counts
-        showSuccess('Transaction categorised!');
-        hideLoading();
-    } catch (err) {
-        console.error('Error categorising transaction:', err);
-        showError('Failed to categorise: ' + err.message);
-        hideLoading();
-    }
-}
-
-async function categorizeBulk(categoryId) {
-    const ids = Array.from(selectedTransactions);
-    if (ids.length === 0) return;
-
-    try {
-        console.log(`Bulk categorise: ${ids.length} transactions → category ${categoryId}`);
-        showLoading();
-        const result = await apiRequest('/transactions/bulk-categorize', 'POST', {
-            transactionIds: ids,
-            categoryId,
-        });
-
-        if (result) {
-            ids.forEach(id => {
-                const row = document.querySelector(`tr[data-id="${id}"]`);
-                if (row) row.remove();
-            });
-            transactions = transactions.filter(t => !ids.includes(t.id));
-            selectedTransactions.clear();
-            updateSelectedTransactions();
-
-            const visibleCount = transactionSearchTerm
-                ? transactions.filter(t => t.description.toLowerCase().includes(transactionSearchTerm)).length
-                : transactions.length;
-            if (visibleCount === 0) renderTransactions();
-
-            loadCategories();
-            showSuccess(`${result.processed} transaction${result.processed !== 1 ? 's' : ''} categorised!`);
-        }
-        hideLoading();
-    } catch (err) {
-        console.error('Error in bulk categorisation:', err);
-        showError('Failed to categorise: ' + err.message);
-        hideLoading();
-    }
-}
-
-// ── Category CRUD ─────────────────────────────────────────────────────────────
-window.editCategory = async function (categoryId) {
-    const cat = categories.find(c => c.id === categoryId);
-    if (!cat) return;
-
-    elements.modalTitle.textContent = 'Edit Category';
-    elements.categoryName.value = cat.name;
-    elements.categoryDescription.value = cat.description ?? '';
-    elements.categoryForm.dataset.mode = 'edit';
-    elements.categoryForm.dataset.id = categoryId;
-    delete elements.categoryForm.dataset.returnToPicker;
-    elements.categoryModal.style.display = 'flex';
-};
-
-window.deleteCategory = async function (categoryId) {
-    if (!confirm('Delete this category?')) return;
-
-    try {
-        console.log(`Deleting category ${categoryId}`);
-        showLoading();
-        await apiRequest(`/categories/${categoryId}`, 'DELETE');
-        await loadCategories();
-        showSuccess('Category deleted.');
-        hideLoading();
-    } catch (err) {
-        console.error('Error deleting category:', err);
-        showError('Failed to delete category: ' + err.message);
-        hideLoading();
-    }
-};
-
-// ── View switching ────────────────────────────────────────────────────────────
-function showCategorizeView() {
-    currentView = 'categorize';
-    document.getElementById('categorizeView').style.display = 'block';
-    document.getElementById('categoryDetailView').style.display = 'none';
-    document.getElementById('tabCategorize').classList.add('active');
-    document.getElementById('tabCategories').classList.remove('active');
-}
-
-function showCategoryView() {
-    currentView = 'categories';
-    document.getElementById('categorizeView').style.display = 'none';
-    document.getElementById('categoryDetailView').style.display = 'block';
-    document.getElementById('tabCategorize').classList.remove('active');
-    document.getElementById('tabCategories').classList.add('active');
-
-    renderCategories();
-    applyDateFilter();
-}
-
-// ── Category detail / analytics ───────────────────────────────────────────────
-function renderCategoryDetailView() {
-    const container = document.getElementById('categoryDetailContainer');
-    if (!container) return;
-
-    if (analyticsCategories.length === 0) {
-        container.innerHTML = '<p class="empty-state">No spending data for this period.</p>';
-        return;
-    }
-
-    const sorted = [...analyticsCategories].sort((a, b) => b.totalSpending - a.totalSpending);
-
-    container.innerHTML = sorted.map(cat => {
-        const isExpanded = expandedCategories.has(cat.id);
-        const color = getCategoryColor(cat.id);
-
-        let comparisonHtml = '';
-        if (previousPeriodData) {
-            const prev = previousPeriodData.find(p => p.id === cat.id);
-            if (prev && prev.totalSpending > 0) {
-                const comp = calculateComparison(cat.totalSpending, prev.totalSpending);
-                if (comp) {
-                    const arrow = comp.direction === 'up' ? '↑' : comp.direction === 'down' ? '↓' : '→';
-                    const cls   = comp.increase ? 'comparison-up' : 'comparison-down';
-                    comparisonHtml = `<span class="category-comparison ${cls}">${arrow} ${comp.percentage}%</span>`;
-                }
-            }
-        }
-
-        return `
-            <div class="category-detail-card" data-category-id="${cat.id}">
-                <div class="category-detail-header" onclick="toggleCategoryTransactions(${cat.id})">
-                    <span class="expand-icon">${isExpanded ? '▼' : '▶'}</span>
-                    <span class="category-color-bar" style="background:${color}"></span>
-                    <div class="category-detail-info">
-                        <h3>${escapeHtml(cat.name)}</h3>
-                        <p class="category-detail-stats">
-                            ${formatCurrency(cat.totalSpending)}
-                            &nbsp;•&nbsp; ${cat.transactionCount} transaction${cat.transactionCount !== 1 ? 's' : ''}
-                            ${comparisonHtml ? `&nbsp;${comparisonHtml}` : ''}
-                        </p>
-                    </div>
-                </div>
-                <div class="category-detail-transactions" id="transactions-${cat.id}"
-                     style="display:${isExpanded ? 'block' : 'none'};">
-                    ${isExpanded ? renderCategoryTransactions(cat.id) : ''}
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-function renderCategoryTransactions(categoryId) {
-    const txns = categoryTransactions[categoryId];
-
-    if (!txns) return '<div class="loading-transactions">Loading…</div>';
-    if (txns.length === 0) return '<div class="no-transactions">No transactions in this period.</div>';
-
     return `
-        <table class="category-transactions-table">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Description</th>
-                    <th>Amount</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${txns.map(t => `
-                    <tr>
-                        <td>${formatDate(t.transactionDate)}</td>
-                        <td>${escapeHtml(t.description)}</td>
-                        <td>${formatAmount(t.debit, t.credit)}</td>
-                        <td class="transaction-actions">
-                            <button class="btn btn-sm btn-secondary" onclick="removeTransactionFromCategory(${t.id})">
-                                Remove
-                            </button>
-                            <select class="reassign-select" onchange="reassignTransaction(${t.id}, this.value)">
-                                <option value="">Re-assign…</option>
-                                ${categories.filter(c => c.id !== categoryId).map(c => `
-                                    <option value="${c.id}">${escapeHtml(c.name)}</option>
-                                `).join('')}
-                            </select>
-                        </td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>
+      <div class="bar-row" data-cat-id="${r.cat.id}">
+        <span class="bar-dot" style="background:${r.cat.color}"></span>
+        <span class="bar-name">${escapeHtml(r.cat.name)}</span>
+        <span class="bar-track">
+          <span class="bar-fill" style="background:${r.cat.color}; transform:scaleX(${pct.toFixed(3)})"></span>
+        </span>
+        <span class="bar-amount tabular">${fmtMoney(r.curr).replace('R ', 'R ')}</span>
+        <span class="bar-delta">${deltaHtml}</span>
+      </div>
     `;
+  }).join('');
 }
 
-window.toggleCategoryTransactions = async function (categoryId) {
-    if (expandedCategories.has(categoryId)) {
-        expandedCategories.delete(categoryId);
-    } else {
-        expandedCategories.add(categoryId);
-        if (!categoryTransactions[categoryId]) {
-            await loadCategoryTransactions(categoryId);
-        }
-    }
-    renderCategoryDetailView();
-};
+function renderBiggest(ym) {
+  const top = txnsInMonth(ym)
+    .filter(t => t.amount < 0)
+    .sort((a, b) => a.amount - b.amount)
+    .slice(0, 6);
 
-async function loadCategoryTransactions(categoryId) {
-    try {
-        let endpoint = `/categories/${categoryId}/transactions`;
-        if (selectedDateRange.startDate && selectedDateRange.endDate) {
-            endpoint += `?startDate=${formatDateForApi(selectedDateRange.startDate)}&endDate=${formatDateForApi(selectedDateRange.endDate)}`;
-        }
-        const data = await apiRequest(endpoint);
-        if (data) categoryTransactions[categoryId] = data;
-    } catch (err) {
-        console.error(`Error loading transactions for category ${categoryId}:`, err);
-        categoryTransactions[categoryId] = [];
-    }
-}
-
-window.removeTransactionFromCategory = async function (transactionId) {
-    if (!confirm('Remove this transaction from its category?')) return;
-
-    try {
-        showLoading();
-        await apiRequest(`/transactions/${transactionId}/category`, 'DELETE');
-
-        categoryTransactions = {};
-        expandedCategories.clear();
-        await loadCategories();
-        await loadTransactions();
-
-        if (currentView === 'categories') await applyDateFilter();
-
-        showSuccess('Transaction removed from category.');
-        hideLoading();
-    } catch (err) {
-        console.error('Error removing transaction:', err);
-        showError('Failed to remove transaction: ' + err.message);
-        hideLoading();
-    }
-};
-
-window.reassignTransaction = async function (transactionId, newCategoryId) {
-    if (!newCategoryId) return;
-
-    try {
-        showLoading();
-        await apiRequest(`/transactions/${transactionId}/category`, 'PUT', {
-            categoryId: parseInt(newCategoryId),
-        });
-
-        categoryTransactions = {};
-        expandedCategories.clear();
-        await loadCategories();
-
-        if (currentView === 'categories') await applyDateFilter();
-
-        showSuccess('Transaction reassigned.');
-        hideLoading();
-    } catch (err) {
-        console.error('Error reassigning transaction:', err);
-        showError('Failed to reassign transaction: ' + err.message);
-        hideLoading();
-    }
-};
-
-// ── Date filtering ────────────────────────────────────────────────────────────
-function calculateDateRange(preset) {
-    const now = new Date();
-    const ranges = {
-        'this-month':    () => ({ start: new Date(now.getFullYear(), now.getMonth(), 1),     end: new Date(now.getFullYear(), now.getMonth() + 1, 0) }),
-        'last-month':    () => ({ start: new Date(now.getFullYear(), now.getMonth() - 1, 1), end: new Date(now.getFullYear(), now.getMonth(), 0) }),
-        'last-3-months': () => ({ start: new Date(now.getFullYear(), now.getMonth() - 3, 1), end: new Date(now.getFullYear(), now.getMonth(), 0) }),
-        'this-quarter':  () => { const q = Math.floor(now.getMonth() / 3);       return { start: new Date(now.getFullYear(), q * 3, 1),     end: new Date(now.getFullYear(), (q + 1) * 3, 0) }; },
-        'last-quarter':  () => { const q = Math.floor(now.getMonth() / 3) - 1; const y = q < 0 ? now.getFullYear() - 1 : now.getFullYear(); const aq = q < 0 ? 3 : q; return { start: new Date(y, aq * 3, 1), end: new Date(y, (aq + 1) * 3, 0) }; },
-        'this-year':     () => ({ start: new Date(now.getFullYear(), 0, 1),      end: new Date(now.getFullYear(), 11, 31) }),
-        'last-year':     () => ({ start: new Date(now.getFullYear() - 1, 0, 1), end: new Date(now.getFullYear() - 1, 11, 31) }),
-        'all-time':      () => ({ start: null, end: null }),
-    };
-    return ranges[preset] ? ranges[preset]() : { start: null, end: null };
-}
-
-function calculatePreviousPeriod(startDate, endDate) {
-    if (!startDate || !endDate) return { start: null, end: null };
-    const duration = endDate - startDate;
-    const prevEnd  = new Date(startDate.getTime() - 86400000);
-    const prevStart = new Date(prevEnd.getTime() - duration);
-    return { start: prevStart, end: prevEnd };
-}
-
-function formatDateForApi(date) {
-    if (!date) return null;
-    return date.toISOString().split('T')[0];
-}
-
-async function loadCategoriesWithDateFilter(startDate, endDate) {
-    try {
-        let endpoint = '/categories';
-        if (startDate && endDate) {
-            endpoint += `?startDate=${formatDateForApi(startDate)}&endDate=${formatDateForApi(endDate)}`;
-        }
-        return await apiRequest(endpoint) ?? null;
-    } catch (err) {
-        console.error('Error loading categories with date filter:', err);
-        showError('Failed to load categories: ' + err.message);
-        return null;
-    }
-}
-
-async function applyDateFilter() {
-    if (selectedDateRange.preset === 'custom') {
-        if (!selectedDateRange.startDate || !selectedDateRange.endDate) {
-            showError('Please select both start and end dates.');
-            return;
-        }
-    } else {
-        const range = calculateDateRange(selectedDateRange.preset);
-        selectedDateRange.startDate = range.start;
-        selectedDateRange.endDate   = range.end;
-    }
-
-    showLoading();
-
-    analyticsCategories = await loadCategoriesWithDateFilter(selectedDateRange.startDate, selectedDateRange.endDate) ?? [];
-
-    const prev = calculatePreviousPeriod(selectedDateRange.startDate, selectedDateRange.endDate);
-    previousPeriodData = prev.start && prev.end
-        ? await loadCategoriesWithDateFilter(prev.start, prev.end)
-        : null;
-
-    categoryTransactions = {};
-    expandedCategories.clear();
-
-    renderCategoryDetailView();
-    updateDateFilterDisplay();
-    hideLoading();
-}
-
-function updateDateFilterDisplay() {
-    const el = document.getElementById('dateRangeDisplay');
-    if (!el) return;
-
-    const dateText   = formatDateRangeDisplay(selectedDateRange.startDate, selectedDateRange.endDate);
-    const total      = analyticsCategories.reduce((s, c) => s + c.totalSpending, 0);
-
-    let comparisonHtml = '';
-    if (previousPeriodData) {
-        const prevTotal = previousPeriodData.reduce((s, c) => s + c.totalSpending, 0);
-        const comp = calculateComparison(total, prevTotal);
-        if (comp) {
-            const arrow = comp.direction === 'up' ? '↑' : comp.direction === 'down' ? '↓' : '→';
-            const cls   = comp.increase ? 'comparison-up' : 'comparison-down';
-            const label = getPreviousPeriodName(selectedDateRange.preset);
-            comparisonHtml = `<span class="${cls}">${arrow} ${comp.percentage}% vs ${label}</span>`;
-        }
-    }
-
-    el.innerHTML = `
-        <span class="date-range-text">📅 ${dateText}</span>
-        <span class="total-spending">• ${formatCurrency(total)}</span>
-        ${comparisonHtml ? ` • ${comparisonHtml}` : ''}
+  $('#biggestList').innerHTML = top.map(t => {
+    const cat = t.categoryId ? state.categories.find(c => c.id === t.categoryId) : null;
+    return `
+      <li>
+        <span class="tx-dot" style="background:${cat ? cat.color : 'var(--ink-4)'}"></span>
+        <div style="min-width:0">
+          <div class="tx-name">${escapeHtml(t.desc)}</div>
+          <div class="tx-meta">${shortDate(t.date)}${cat ? ' · ' + escapeHtml(cat.name) : ' · uncategorized'}</div>
+        </div>
+        <span class="tx-amt tabular">${fmtMoney(t.amount).replace('−', '−')}</span>
+      </li>
     `;
+  }).join('');
 }
 
-function formatDateRangeDisplay(startDate, endDate) {
-    if (!startDate || !endDate) return 'All Time';
-    const opts = { month: 'short', year: 'numeric' };
-    const s = new Date(startDate);
-    const e = new Date(endDate);
-    if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
-        return s.toLocaleDateString('en-ZA', opts);
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+// -----------------------------------------------------------------------------
+// Render — Categorize view
+// -----------------------------------------------------------------------------
+function renderCategorize() {
+  const pending = pendingTxns();
+
+  $('#pendingCount').textContent = pending.length;
+  $('#progressDone').textContent = state.sessionDone;
+  $('#progressTotal').textContent = state.sessionDone + pending.length;
+  const denom = state.sessionDone + pending.length;
+  const pct = denom > 0 ? state.sessionDone / denom * 100 : 0;
+  $('#progressFill').style.width = pct + '%';
+
+  // Ensure focused id is still in the pending set; otherwise focus the first
+  if (!pending.find(t => t.id === state.focusedId)) {
+    state.focusedId = pending[0] ? pending[0].id : null;
+  }
+
+  // List
+  const list = $('#txnList');
+  if (pending.length === 0) {
+    list.innerHTML = '';
+    $('#txnEmpty').hidden = false;
+    $('#assignRail').style.opacity = '0.4';
+    $('#assignRail').style.pointerEvents = 'none';
+  } else {
+    $('#txnEmpty').hidden = true;
+    $('#assignRail').style.opacity = '1';
+    $('#assignRail').style.pointerEvents = 'auto';
+    list.innerHTML = pending.map(t => {
+      const focused = t.id === state.focusedId;
+      return `
+        <div class="row ${focused ? 'is-focused' : ''}" data-id="${t.id}" tabindex="0">
+          <div class="c-date">${shortDate(t.date)}</div>
+          <div class="c-desc">${escapeHtml(t.desc)}</div>
+          <div class="c-amount amount-debit">${fmtMoney(t.amount)}</div>
+          <div class="c-status">${focused ? `<span class="muted small">← assign below</span>` : `<span class="muted small">uncategorized</span>`}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Sidebar badge
+  renderSidebar();
+
+  // Rail
+  renderRail();
+}
+
+function renderRail() {
+  $('#railChips').innerHTML = state.categories.slice(0, 9).map((c, i) => `
+    <button class="chip" data-cat-id="${c.id}" type="button">
+      <span class="chip-num">${i + 1}</span>
+      <span class="chip-dot" style="background:${c.color}"></span>
+      <span>${escapeHtml(c.name)}</span>
+    </button>
+  `).join('');
+}
+
+// -----------------------------------------------------------------------------
+// Render — Drawer (Categories)
+// -----------------------------------------------------------------------------
+let drawerOpen = false;
+
+function openDrawer() {
+  drawerOpen = true;
+  $('#drawer').hidden = false;
+  renderDrawer();
+  // Focus the input later, after animation
+  setTimeout(() => $('#catNewInput').focus(), 200);
+}
+
+function closeDrawer() {
+  drawerOpen = false;
+  $('#drawer').hidden = true;
+}
+
+function renderDrawer() {
+  $('#catCount').textContent = state.categories.length;
+  $('#newCatIndex').textContent = state.categories.length + 1;
+
+  // Per-category txn counts (all-time)
+  const counts = {};
+  for (const t of state.transactions) {
+    if (!t.categoryId) continue;
+    counts[t.categoryId] = (counts[t.categoryId] || 0) + 1;
+  }
+
+  $('#catList').innerHTML = state.categories.map((c, i) => `
+    <li class="cat-row" data-cat-id="${c.id}" draggable="true">
+      <span class="cat-grip" aria-hidden="true">⋮⋮</span>
+      <span class="cat-num">${i + 1}</span>
+      <span class="cat-dot" style="background:${c.color}"></span>
+      <span class="cat-name" data-name>${escapeHtml(c.name)}</span>
+      <span class="cat-count">${counts[c.id] || 0} txns</span>
+      <button class="cat-action" data-action="edit" aria-label="Rename">${icons.pencil()}</button>
+      <button class="cat-action del" data-action="delete" aria-label="Delete">${icons.trash()}</button>
+    </li>
+  `).join('');
+
+  // Next color preview
+  const nextColor = `var(--${CAT_PALETTE[state.categories.length % CAT_PALETTE.length]})`;
+  $('#newCatDot').style.background = nextColor;
+}
+
+// -----------------------------------------------------------------------------
+// Toasts
+// -----------------------------------------------------------------------------
+function toast(msg, { undoLabel, onUndo, duration = 4000 } = {}) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `<span>${msg}</span>` + (undoLabel ? `<button class="undo" type="button">${undoLabel}</button>` : '');
+  if (undoLabel) {
+    el.querySelector('.undo').addEventListener('click', () => {
+      onUndo && onUndo();
+      el.remove();
+    });
+  }
+  $('#toastStack').appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 200ms'; setTimeout(() => el.remove(), 220); }, duration);
+}
+
+// -----------------------------------------------------------------------------
+// Wire up — event handlers
+// -----------------------------------------------------------------------------
+function bind() {
+  // Routing
+  window.addEventListener('hashchange', applyRoute);
+
+  // Month switcher
+  $('#monthSeg').addEventListener('click', e => {
+    const dir = e.target.closest('[data-month]')?.dataset.month;
+    if (!dir) return;
+    state.currentMonth = dir === 'prev' ? prevMonth(state.currentMonth) : nextMonth(state.currentMonth);
+    renderSpend();
+  });
+
+  // Filter pills on Categorize
+  $('#filterPills').addEventListener('click', e => {
+    const btn = e.target.closest('[data-filter]');
+    if (!btn) return;
+    state.filter = btn.dataset.filter;
+    $$('#filterPills .pill').forEach(p => p.classList.toggle('pill-active', p === btn));
+    renderCategorize();
+  });
+
+  // Sidebar categories button + global "C" key
+  $('#openCategoriesBtn').addEventListener('click', openDrawer);
+
+  // Bar row in spend — placeholder for future category deep-dive
+  $('#catBars').addEventListener('click', e => {
+    const row = e.target.closest('[data-cat-id]');
+    if (!row) return;
+  });
+
+  // ── Categorize: row click → focus
+  $('#txnList').addEventListener('click', e => {
+    const row = e.target.closest('[data-id]');
+    if (!row) return;
+    state.focusedId = Number(row.dataset.id);
+    renderCategorize();
+  });
+
+  // ── Categorize: chip click → assign
+  $('#railChips').addEventListener('click', e => {
+    const btn = e.target.closest('[data-cat-id]');
+    if (!btn || !state.focusedId) return;
+    assignFocusedTo(Number(btn.dataset.catId));
+  });
+
+  $('#skipBtn').addEventListener('click', () => skipFocused());
+  $('#ignoreBtn').addEventListener('click', () => ignoreFocused());
+
+  // ── Keyboard
+  window.addEventListener('keydown', onKey);
+
+  // ── Drawer
+  $('#drawer').addEventListener('click', e => {
+    if (e.target.closest('[data-drawer-close]')) closeDrawer();
+  });
+
+  // Drawer: edit / delete / rename
+  $('#catList').addEventListener('click', e => {
+    const row = e.target.closest('.cat-row');
+    if (!row) return;
+    const id = Number(row.dataset.catId);
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    if (btn.dataset.action === 'edit') startRename(row, id);
+    if (btn.dataset.action === 'delete') confirmDelete(id);
+  });
+
+  // Add new category
+  const newForm = $('#catNewForm');
+  const newInput = $('#catNewInput');
+  const newSubmit = $('#catNewSubmit');
+  newInput.addEventListener('input', () => {
+    newSubmit.disabled = !newInput.value.trim();
+  });
+  newForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    const name = newInput.value.trim();
+    if (!name) return;
+    await api.addCategory(name);
+    newInput.value = '';
+    newSubmit.disabled = true;
+    renderDrawer();
+    renderRail();
+    renderSidebar();
+    toast(`Added "${name}"`);
+  });
+
+  // ── Drag-reorder categories (simple HTML5 DnD)
+  bindCategoryDrag();
+
+  // ── Upload modal
+  $('#uploadBtn').addEventListener('click', () => { $('#uploadModal').hidden = false; });
+  $('#uploadModal').addEventListener('click', e => {
+    if (e.target.closest('[data-modal-close]')) $('#uploadModal').hidden = true;
+  });
+  const fileInput = $('#fileInput');
+  const dropZone = $('#dropZone');
+  const uploadConfirm = $('#uploadConfirm');
+  const bankSelect = $('#bankSelect');
+  const checkReady = () => { uploadConfirm.disabled = !(bankSelect.value && fileInput.files[0]); };
+  bankSelect.addEventListener('change', checkReady);
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files[0];
+    if (f) $('#dropZone .drop-text').innerHTML = `<strong>${escapeHtml(f.name)}</strong><span class="muted">${(f.size/1024).toFixed(1)} KB</span>`;
+    checkReady();
+  });
+  ['dragenter','dragover'].forEach(evt => dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.add('is-drag'); }));
+  ['dragleave','drop'].forEach(evt => dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.remove('is-drag'); }));
+  dropZone.addEventListener('drop', e => {
+    if (e.dataTransfer.files[0]) {
+      const dt = new DataTransfer();
+      dt.items.add(e.dataTransfer.files[0]);
+      fileInput.files = dt.files;
+      fileInput.dispatchEvent(new Event('change'));
     }
-    return `${s.toLocaleDateString('en-ZA', opts)} – ${e.toLocaleDateString('en-ZA', opts)}`;
-}
-
-function calculateComparison(current, previous) {
-    if (!previous || previous === 0) return null;
-    const change = ((current - previous) / previous) * 100;
-    return {
-        percentage: Math.abs(change).toFixed(1),
-        direction: change > 0 ? 'up' : change < 0 ? 'down' : 'same',
-        increase: change > 0,
-    };
-}
-
-function getPreviousPeriodName(preset) {
-    return {
-        'this-month':    'Last Month',
-        'last-month':    'Month Before',
-        'last-3-months': 'Previous 3 Months',
-        'this-quarter':  'Last Quarter',
-        'last-quarter':  'Quarter Before',
-        'this-year':     'Last Year',
-        'last-year':     'Year Before',
-    }[preset] ?? 'Previous Period';
-}
-
-window.onDatePresetChange = function () {
-    const sel = document.getElementById('datePreset');
-    if (!sel) return;
-    selectedDateRange.preset = sel.value;
-
-    const custom = document.getElementById('customDateInputs');
-    if (custom) custom.style.display = selectedDateRange.preset === 'custom' ? 'flex' : 'none';
-
-    if (selectedDateRange.preset !== 'custom') applyDateFilter();
-};
-
-window.applyCustomDateRange = function () {
-    const s = document.getElementById('customStartDate')?.value;
-    const e = document.getElementById('customEndDate')?.value;
-
-    if (!s || !e) { showError('Please select both start and end dates.'); return; }
-
-    const start = new Date(s);
-    const end   = new Date(e);
-
-    if (start > end) { showError('Start date must be before end date.'); return; }
-
-    selectedDateRange.startDate = start;
-    selectedDateRange.endDate   = end;
-    selectedDateRange.preset    = 'custom';
-    applyDateFilter();
-};
-
-// ── CSV upload ────────────────────────────────────────────────────────────────
-async function uploadCsv() {
-    const fileInput     = elements.csvFileInput;
-    const bankTypeSelect = document.getElementById('bankType');
-
-    if (!fileInput?.files?.length) { showError('Please select a CSV file.'); return; }
-    if (!bankTypeSelect?.value)     { showError('Please select a bank type.'); return; }
-
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-    formData.append('bankType', bankTypeSelect.value);
+  });
+  uploadConfirm.addEventListener('click', async () => {
+    const file = fileInput.files[0];
+    const bank = bankSelect.value;
+    uploadConfirm.disabled = true;
+    uploadConfirm.textContent = 'Uploading…';
 
     try {
-        console.log(`CSV upload started: ${fileInput.files[0].name} (${bankTypeSelect.value})`);
-        showLoading();
-        const result = await apiRequest('/transactions/upload', 'POST', formData);
-        if (result) {
-            console.log(`CSV upload complete: ${result.successfulImports} imported, ${result.duplicatesSkipped} duplicates skipped, ${result.failedImports} failed`);
-            showUploadResult(result);
-            fileInput.value = '';
-            bankTypeSelect.value = '';
-            await loadTransactions();
-        }
-        hideLoading();
-    } catch (err) {
-        console.error('Error uploading CSV:', err);
-        showError('Failed to upload CSV: ' + err.message);
-        hideLoading();
+      const form = new FormData();
+      form.append('file', file);
+      form.append('bankType', bank);
+      const res = await fetch('/api/transactions/upload', { method: 'POST', body: form });
+      const result = await res.json();
+
+      // Reload transactions to include newly imported ones
+      const txnDtos = await fetch(`/api/transactions?startDate=${sixMonthsAgoDate()}`).then(r => r.json());
+      state.transactions = txnDtos.map(mapTxn);
+      state.sessionDone = 0;
+
+      $('#uploadModal').hidden = true;
+      bankSelect.value = ''; fileInput.value = '';
+      $('#dropZone .drop-text').innerHTML = `<strong>Drop a CSV here</strong><span class="muted">or click to choose a file</span>`;
+      uploadConfirm.textContent = 'Upload';
+      uploadConfirm.disabled = true;
+
+      renderSpend();
+      renderCategorize();
+      renderSidebar();
+      toast(`Imported ${result.successfulImports} transaction${result.successfulImports === 1 ? '' : 's'}`);
+    } catch {
+      uploadConfirm.textContent = 'Upload';
+      uploadConfirm.disabled = false;
+      toast('Upload failed — please try again');
     }
+  });
 }
 
-function showUploadResult(result) {
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.style.display = 'flex';
+// -----------------------------------------------------------------------------
+// Categorize actions
+// -----------------------------------------------------------------------------
+async function assignFocusedTo(catId) {
+  if (!state.focusedId) return;
+  const txn = state.transactions.find(t => t.id === state.focusedId);
+  if (!txn) return;
+  const cat = state.categories.find(c => c.id === catId);
+  if (!cat) return;
 
-    const dupSection = result.duplicatesSkipped > 0 ? `
-        <div class="upload-result-section warning">
-            <strong>⚠️ Duplicates Skipped:</strong> ${result.duplicatesSkipped} transactions
-            ${result.duplicateWarnings.length > 0 ? `
-                <details class="duplicate-details">
-                    <summary>View duplicate transactions</summary>
-                    <ul class="duplicate-list">
-                        ${result.duplicateWarnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}
-                    </ul>
-                </details>
-            ` : ''}
-        </div>
-    ` : '';
+  // Move focus to next pending before mutating
+  const pending = pendingTxns();
+  const idx = pending.findIndex(t => t.id === state.focusedId);
+  const next = pending[idx + 1] || pending[idx - 1] || null;
 
-    const errSection = result.failedImports > 0 ? `
-        <div class="upload-result-section error">
-            <strong>❌ Failed:</strong> ${result.failedImports} transactions
-            ${result.errors.length > 0 ? `
-                <details>
-                    <summary>View errors</summary>
-                    <ul class="error-list">
-                        ${result.errors.map(e => `<li>${escapeHtml(e)}</li>`).join('')}
-                    </ul>
-                </details>
-            ` : ''}
-        </div>
-    ` : '';
+  await api.categorize(txn.id, cat.id);
+  state.focusedId = next ? next.id : null;
 
-    modal.innerHTML = `
-        <div class="modal-content upload-result-modal">
-            <div class="modal-header">
-                <h2>CSV Upload Complete</h2>
-                <button class="modal-close" onclick="this.closest('.modal').remove()">&times;</button>
-            </div>
-            <div class="upload-result-body">
-                <div class="upload-result-section success">
-                    <strong>✅ Successfully Imported:</strong> ${result.successfulImports} transactions
-                </div>
-                ${dupSection}
-                ${errSection}
-                <div class="upload-result-batch">
-                    <small>Batch ID: ${result.uploadBatchId}</small>
-                </div>
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Close</button>
-                ${result.successfulImports > 0 ? `
-                    <button class="btn btn-danger" onclick="deleteUploadBatch('${result.uploadBatchId}')">
-                        Delete This Upload
-                    </button>
-                ` : ''}
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
+  renderCategorize();
+  toast(`Assigned to ${cat.name}`, {
+    undoLabel: 'Undo',
+    onUndo: () => undoLast(),
+  });
 }
 
-window.deleteUploadBatch = async function (uploadBatchId) {
-    if (!confirm('Delete all transactions from this upload? This cannot be undone.')) return;
+async function undoLast() {
+  const last = state.undo.pop();
+  if (!last) return;
+  const t = state.transactions.find(x => x.id === last.txnId);
+  if (!t) return;
 
-    try {
-        console.log(`Deleting upload batch ${uploadBatchId}`);
-        showLoading();
-        const result = await apiRequest(`/transactions/batch/${uploadBatchId}`, 'DELETE');
+  if (last.prev === null) {
+    await fetch(`/api/transactions/${last.txnId}/category`, { method: 'DELETE' });
+  } else {
+    await fetch(`/api/transactions/${last.txnId}/category`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ categoryId: last.prev }),
+    });
+  }
 
-        if (result) {
-            document.querySelectorAll('.upload-result-modal').forEach(m => m.closest('.modal').remove());
-            showSuccess(`Deleted ${result.deletedCount} transactions.`);
-            await loadCategories();
-            await loadTransactions();
-            if (currentView === 'categories') await applyDateFilter();
-        }
-        hideLoading();
-    } catch (err) {
-        console.error('Error deleting batch:', err);
-        showError('Failed to delete batch: ' + err.message);
-        hideLoading();
+  if (last.prev == null && t.categoryId != null) state.sessionDone = Math.max(0, state.sessionDone - 1);
+  t.categoryId = last.prev;
+  state.focusedId = t.id;
+  renderCategorize();
+}
+
+function skipFocused() {
+  const pending = pendingTxns();
+  const idx = pending.findIndex(t => t.id === state.focusedId);
+  const next = pending[idx + 1] || pending[0];
+  if (next) {
+    state.focusedId = next.id;
+    renderCategorize();
+  }
+}
+
+function ignoreFocused() {
+  // "ignore" assigns to Miscellaneous if present, else last category
+  const ignore = state.categories.find(c => /misc|other/i.test(c.name)) || state.categories[state.categories.length - 1];
+  if (ignore) assignFocusedTo(ignore.id);
+}
+
+function moveFocus(dir) {
+  const pending = pendingTxns();
+  if (pending.length === 0) return;
+  const idx = pending.findIndex(t => t.id === state.focusedId);
+  let next = idx + dir;
+  if (next < 0) next = 0;
+  if (next >= pending.length) next = pending.length - 1;
+  state.focusedId = pending[next].id;
+  renderCategorize();
+  // Scroll into view
+  const row = $(`.row[data-id="${state.focusedId}"]`);
+  if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+// -----------------------------------------------------------------------------
+// Drawer: rename + delete
+// -----------------------------------------------------------------------------
+function startRename(row, id) {
+  const nameSpan = row.querySelector('[data-name]');
+  const cat = state.categories.find(c => c.id === id);
+  if (!cat) return;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'cat-name-edit';
+  input.value = cat.name;
+  nameSpan.replaceWith(input);
+  input.focus();
+  input.select();
+  const commit = async () => {
+    const newName = input.value.trim();
+    if (newName && newName !== cat.name) {
+      await api.renameCategory(id, newName);
+      toast(`Renamed to "${newName}"`);
     }
-};
-
-window.deleteTransaction = async function (transactionId) {
-    if (!confirm('Delete this transaction?')) return;
-
-    try {
-        showLoading();
-        await apiRequest(`/transactions/${transactionId}`, 'DELETE');
-        await loadCategories();
-        await loadTransactions();
-        if (currentView === 'categories') {
-            categoryTransactions = {};
-            expandedCategories.clear();
-            await applyDateFilter();
-        }
-        showSuccess('Transaction deleted.');
-        hideLoading();
-    } catch (err) {
-        console.error('Error deleting transaction:', err);
-        showError('Failed to delete transaction: ' + err.message);
-        hideLoading();
-    }
-};
-
-// ── Utilities ─────────────────────────────────────────────────────────────────
-function formatCurrency(amount) {
-    if (!amount && amount !== 0) return 'R 0.00';
-    return `R ${amount.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    renderDrawer();
+    renderRail();
+  };
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { renderDrawer(); }
+  });
+  input.addEventListener('blur', commit);
 }
 
-function formatAmount(debit, credit) {
-    if (debit  && debit  !== 0) return `<span class="amount-debit">-${formatCurrency(debit)}</span>`;
-    if (credit && credit !== 0) return `<span class="amount-credit">+${formatCurrency(credit)}</span>`;
-    return formatCurrency(0);
+async function confirmDelete(id) {
+  const cat = state.categories.find(c => c.id === id);
+  if (!cat) return;
+  const count = state.transactions.filter(t => t.categoryId === id).length;
+  const msg = count > 0
+    ? `Delete "${cat.name}"? ${count} transaction${count === 1 ? '' : 's'} will be uncategorized.`
+    : `Delete "${cat.name}"?`;
+  if (!confirm(msg)) return;
+  await api.deleteCategory(id);
+  renderDrawer();
+  renderRail();
+  renderSidebar();
+  if (currentRoute() === 'categorize') renderCategorize();
+  if (currentRoute() === 'spend') renderSpend();
+  toast(`Deleted "${cat.name}"`);
 }
 
-function formatDate(dateString) {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
-}
+// -----------------------------------------------------------------------------
+// Drag-reorder categories
+// -----------------------------------------------------------------------------
+function bindCategoryDrag() {
+  const list = $('#catList');
+  let dragId = null;
+  list.addEventListener('dragstart', e => {
+    const row = e.target.closest('.cat-row');
+    if (!row) return;
+    dragId = row.dataset.catId;
+    row.style.opacity = '0.4';
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  list.addEventListener('dragend', e => {
+    const row = e.target.closest('.cat-row');
+    if (row) row.style.opacity = '';
+    dragId = null;
+  });
+  list.addEventListener('dragover', e => {
+    if (!dragId) return;
+    e.preventDefault();
+    const row = e.target.closest('.cat-row');
+    if (!row || row.dataset.catId === dragId) return;
+    const rect = row.getBoundingClientRect();
+    const after = e.clientY > rect.top + rect.height / 2;
+    const draggingEl = list.querySelector(`[data-cat-id="${dragId}"]`);
+    if (after) row.after(draggingEl); else row.before(draggingEl);
+  });
+  list.addEventListener('drop', async e => {
+    if (!dragId) return;
+    e.preventDefault();
+    // Read new order from DOM; dataset values are always strings, so coerce with String()
+    const order = [...list.querySelectorAll('.cat-row')].map(r => r.dataset.catId);
+    state.categories.sort((a, b) => order.indexOf(String(a.id)) - order.indexOf(String(b.id)));
 
-function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function showLoading() {
-    if (elements.loading) elements.loading.style.display = 'flex';
-}
-
-function hideLoading() {
-    if (elements.loading) elements.loading.style.display = 'none';
-}
-
-function showError(message) {
-    alert('Error: ' + message);
-}
-
-function showSuccess(message) {
-    const n = document.createElement('div');
-    n.className = 'notification success';
-    n.textContent = message;
-    document.body.appendChild(n);
-    setTimeout(() => n.remove(), 3000);
-}
-
-// ── Event listeners ───────────────────────────────────────────────────────────
-if (elements.selectAll) {
-    elements.selectAll.addEventListener('change', e => {
-        document.querySelectorAll('.transaction-checkbox').forEach(cb => {
-            cb.checked = e.target.checked;
-        });
-        updateSelectedTransactions();
+    // Persist new order to backend
+    await fetch('/api/categories/reorder', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state.categories.map((c, i) => ({ id: c.id, sortOrder: i }))),
     });
+
+    renderDrawer();
+    renderRail();
+  });
 }
 
-if (elements.categorizeSelectedBtn) {
-    elements.categorizeSelectedBtn.addEventListener('click', () => {
-        if (selectedTransactions.size === 0) return;
-        openCategoryPicker(undefined); // bulk mode
-    });
+// -----------------------------------------------------------------------------
+// Keyboard
+// -----------------------------------------------------------------------------
+function onKey(e) {
+  // Skip when typing in inputs
+  const target = e.target;
+  const isTyping = target.matches('input, textarea, select, [contenteditable="true"]');
+
+  // Escape: close drawer/modal first
+  if (e.key === 'Escape') {
+    if (!$('#uploadModal').hidden) { $('#uploadModal').hidden = true; e.preventDefault(); return; }
+    if (drawerOpen) { closeDrawer(); e.preventDefault(); return; }
+    return;
+  }
+
+  // ⌘Z / Ctrl-Z: undo
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+    if (isTyping) return;
+    e.preventDefault();
+    undoLast();
+    return;
+  }
+
+  if (isTyping) return;
+
+  // Global: 'c' opens drawer
+  if (e.key === 'c' || e.key === 'C') {
+    e.preventDefault();
+    drawerOpen ? closeDrawer() : openDrawer();
+    return;
+  }
+
+  // Categorize-only shortcuts
+  if (currentRoute() !== 'categorize') return;
+  if (drawerOpen) return;
+
+  if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveFocus(1); return; }
+  if (e.key === 'k' || e.key === 'ArrowUp')   { e.preventDefault(); moveFocus(-1); return; }
+  if (e.key === 's') { e.preventDefault(); skipFocused(); return; }
+  if (e.key === 'x') { e.preventDefault(); ignoreFocused(); return; }
+
+  // Number keys 1-9 → assign to that category
+  const n = parseInt(e.key, 10);
+  if (n >= 1 && n <= 9) {
+    const cat = state.categories[n - 1];
+    if (cat) { e.preventDefault(); assignFocusedTo(cat.id); }
+  }
 }
 
-if (elements.addCategoryBtn) {
-    elements.addCategoryBtn.addEventListener('click', () => {
-        elements.modalTitle.textContent = 'Add Category';
-        elements.categoryForm.reset();
-        elements.categoryForm.dataset.mode = 'add';
-        delete elements.categoryForm.dataset.returnToPicker;
-        delete elements.categoryForm.dataset.id;
-        elements.categoryModal.style.display = 'flex';
-        setTimeout(() => elements.categoryName?.focus(), 50);
-    });
+// -----------------------------------------------------------------------------
+// Init
+// -----------------------------------------------------------------------------
+async function init() {
+  const [catDtos, txnDtos] = await Promise.all([
+    fetch('/api/categories').then(r => r.json()),
+    fetch(`/api/transactions?startDate=${sixMonthsAgoDate()}`).then(r => r.json()),
+  ]);
+
+  state.categories = catDtos.map((c, i) => ({
+    id: c.id,
+    name: c.name,
+    color: `var(--${CAT_PALETTE[i % CAT_PALETTE.length]})`,
+  }));
+
+  state.transactions = txnDtos.map(mapTxn);
+  state.currentMonth = new Date().toISOString().substring(0, 7);
+
+  const firstUncat = state.transactions.find(t => t.categoryId == null && t.amount < 0);
+  state.focusedId = firstUncat ? firstUncat.id : null;
+
+  if (!location.hash) location.hash = '#/spend';
+  applyRoute();
+  renderSidebar();
+  renderRail();
+  bind();
 }
 
-if (elements.modalClose)  elements.modalClose.addEventListener('click',  () => { elements.categoryModal.style.display = 'none'; });
-if (elements.cancelBtn)   elements.cancelBtn.addEventListener('click',   () => { elements.categoryModal.style.display = 'none'; });
-
-document.getElementById('pickerModalClose')?.addEventListener('click', () => {
-    document.getElementById('categoryPickerModal').style.display = 'none';
-});
-document.getElementById('pickerCancelBtn')?.addEventListener('click', () => {
-    document.getElementById('categoryPickerModal').style.display = 'none';
-});
-
-if (elements.categoryForm) {
-    elements.categoryForm.addEventListener('submit', async e => {
-        e.preventDefault();
-
-        const mode        = elements.categoryForm.dataset.mode;
-        const name        = elements.categoryName.value.trim();
-        const description = elements.categoryDescription.value.trim();
-        const returnToPicker = elements.categoryForm.dataset.returnToPicker === 'true';
-
-        try {
-            showLoading();
-            if (mode === 'edit') {
-                const id = parseInt(elements.categoryForm.dataset.id);
-                console.log(`Updating category ${id}: name="${name}"`);
-                await apiRequest(`/categories/${id}`, 'PUT', { name, description });
-                showSuccess('Category updated.');
-            } else {
-                console.log(`Creating category: name="${name}"`);
-                await apiRequest('/categories', 'POST', { name, description });
-                showSuccess('Category created.');
-            }
-
-            await loadCategories();
-            elements.categoryModal.style.display = 'none';
-            hideLoading();
-
-            if (returnToPicker) {
-                delete elements.categoryForm.dataset.returnToPicker;
-                openCategoryPicker(pickerTargetTransactionId !== null ? pickerTargetTransactionId : undefined);
-            }
-        } catch (err) {
-            console.error('Error saving category:', err);
-            showError('Failed to save category: ' + err.message);
-            hideLoading();
-        }
-    });
-}
-
-if (elements.uploadBtn) {
-    elements.uploadBtn.addEventListener('click', uploadCsv);
-}
-
-window.addEventListener('click', e => {
-    const catModal    = document.getElementById('categoryModal');
-    const pickerModal = document.getElementById('categoryPickerModal');
-    if (e.target === catModal)    catModal.style.display    = 'none';
-    if (e.target === pickerModal) pickerModal.style.display = 'none';
-});
+init();
