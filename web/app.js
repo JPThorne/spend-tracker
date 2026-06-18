@@ -974,6 +974,10 @@ async function init() {
   renderSidebar();
   renderRail();
   bind();
+
+  fetch('/api/info').then(r => r.json()).then(info => {
+    $('#appVersion').textContent = `v${info.version}`;
+  }).catch(() => {});
 }
 
 init();
