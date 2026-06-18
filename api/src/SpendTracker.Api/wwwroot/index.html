@@ -46,7 +46,19 @@
 
       <div class="sidebar-foot">
         <div class="foot-line">self-hosted · local-only</div>
-        <div class="foot-line foot-dim" id="appVersion"></div>
+        <button class="foot-line foot-dim foot-version" id="appVersion" type="button">
+          <span id="appVersionText"></span>
+          <span class="version-dot" id="versionDot" hidden></span>
+        </button>
+        <div class="version-popover" id="versionPopover" hidden>
+          <div class="version-popover-head">
+            <span id="versionPopoverTitle"></span>
+          </div>
+          <p class="muted small" id="versionPopoverSub"></p>
+          <div class="version-popover-actions">
+            <button class="ghost-btn" id="versionDismissBtn" type="button">Dismiss</button>
+          </div>
+        </div>
       </div>
     </aside>
 
@@ -120,6 +132,7 @@
             <p class="sub">
               <kbd class="kbd">j</kbd> <kbd class="kbd">k</kbd> move focus ·
               <kbd class="kbd">1</kbd>–<kbd class="kbd">9</kbd> assign ·
+              <kbd class="kbd">/</kbd> find category ·
               <kbd class="kbd">⌘Z</kbd> undo
             </p>
           </div>
@@ -142,12 +155,18 @@
           </div>
         </div>
 
+        <!-- Selection toolbar -->
+        <div class="selection-toolbar" id="selectionToolbar" hidden>
+          <span><span id="selectionCount">0</span> selected</span>
+          <button class="ghost-btn" id="selectionClearBtn" type="button">Clear</button>
+        </div>
+
         <!-- Transactions list -->
         <div class="table">
-          <div class="table-head">
-            <div class="th col-date">Date</div>
-            <div class="th col-desc">Description</div>
-            <div class="th col-amount">Amount</div>
+          <div class="table-head" id="txnTableHead">
+            <div class="th col-date" data-sort-key="date">Date <span class="sort-glyph" data-sort-glyph="date"></span></div>
+            <div class="th col-desc" data-sort-key="desc">Description <span class="sort-glyph" data-sort-glyph="desc"></span></div>
+            <div class="th col-amount" data-sort-key="amount">Amount <span class="sort-glyph" data-sort-glyph="amount"></span></div>
             <div class="th col-status">Status</div>
           </div>
           <div class="table-body" id="txnList"></div>
@@ -162,6 +181,7 @@
         <div class="assign-rail" id="assignRail">
           <div class="rail-label">Assign focused row →</div>
           <div class="rail-chips" id="railChips"></div>
+          <button class="ghost-btn rail-more" id="assignMoreBtn" type="button"></button>
           <div class="rail-actions">
             <button class="ghost-btn" id="skipBtn"><kbd class="kbd">s</kbd> skip</button>
             <button class="ghost-btn" id="ignoreBtn"><kbd class="kbd">x</kbd> ignore</button>
@@ -203,6 +223,36 @@
     </aside>
   </div>
 
+  <!-- Assign panel (right-side, sibling to the categories drawer, assignment-only) -->
+  <div class="drawer-root" id="assignPanel" hidden>
+    <div class="drawer-scrim" data-assign-panel-close></div>
+    <aside class="drawer" role="dialog" aria-labelledby="assignPanelTitle">
+      <header class="drawer-head">
+        <div>
+          <h2 class="h2" id="assignPanelTitle">All categories</h2>
+          <p class="muted small" id="assignPanelSub">Click to assign</p>
+        </div>
+        <button class="icon-btn" data-assign-panel-close aria-label="Close">
+          <svg viewBox="0 0 16 16" class="i"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </header>
+      <div class="drawer-body">
+        <ul class="cat-list assign-list" id="assignPanelList"></ul>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Assign picker (type-to-search, triggered by "/") -->
+  <div class="modal-root picker-root" id="assignPicker" hidden>
+    <div class="modal-scrim" data-picker-close></div>
+    <div class="modal modal-sm picker-modal" role="dialog" aria-label="Assign category">
+      <div class="picker-input-row">
+        <input type="text" id="pickerInput" class="input picker-input" placeholder="Type to filter categories…" autocomplete="off">
+      </div>
+      <ul class="picker-list" id="pickerList"></ul>
+    </div>
+  </div>
+
   <!-- Upload sheet -->
   <div class="modal-root" id="uploadModal" hidden>
     <div class="modal-scrim" data-modal-close></div>
@@ -236,6 +286,23 @@
       <footer class="modal-foot">
         <button class="ghost-btn" data-modal-close>Cancel</button>
         <button class="btn btn-primary" id="uploadConfirm" disabled>Upload</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Confirm dialog (generic, reusable) -->
+  <div class="modal-root" id="confirmDialog" hidden>
+    <div class="modal-scrim" data-confirm-cancel></div>
+    <div class="modal modal-sm" role="alertdialog" aria-labelledby="confirmTitle">
+      <header class="modal-head">
+        <h2 class="h2" id="confirmTitle">Are you sure?</h2>
+      </header>
+      <div class="modal-body">
+        <p class="muted" id="confirmBody"></p>
+      </div>
+      <footer class="modal-foot">
+        <button class="ghost-btn" id="confirmCancelBtn" data-confirm-cancel>Cancel</button>
+        <button class="btn btn-danger" id="confirmOkBtn">Delete</button>
       </footer>
     </div>
   </div>

@@ -19,6 +19,20 @@ const state = {
   undo: [],
   /** count of categorizations made this session (for the progress bar) */
   sessionDone: 0,
+  /** current build version (set in init() from /api/info) */
+  version: null,
+  /** latest known version, or null if no update check has resolved one */
+  latestVersion: null,
+  /** version string the user has dismissed the update notice for */
+  updateDismissed: localStorage.getItem('spend.updateDismissed'),
+  /** Categorize list sort */
+  sort: { key: 'date', dir: 'desc' },
+  /** multi-select on the Categorize list */
+  selectedIds: new Set(),
+  /** last plainly-clicked row id, anchor for shift-click range selection */
+  selectionAnchor: null,
+  /** whether the "all categories" assign panel is open */
+  assignPanelOpen: false,
 };
 
 // Color palette for categories (cycled by index)
@@ -95,7 +109,46 @@ const api = {
     if (idx >= 0) state.categories.splice(idx, 1);
     state.transactions.forEach(t => { if (t.categoryId === id) t.categoryId = null; });
   },
+
+  async categorizeBulk(txnIds, categoryId) {
+    const entries = txnIds.map(id => {
+      const txn = state.transactions.find(t => t.id === id);
+      return txn ? { txnId: id, prev: txn.categoryId } : null;
+    }).filter(Boolean);
+    if (entries.length === 0) return;
+    state.undo.push(entries);
+    if (state.undo.length > 50) state.undo.shift();
+
+    await fetch('/api/transactions/bulk-categorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transactionIds: entries.map(e => e.txnId), categoryId }),
+    });
+
+    for (const { txnId, prev } of entries) {
+      const txn = state.transactions.find(t => t.id === txnId);
+      if (!txn) continue;
+      txn.categoryId = categoryId;
+      if (prev == null) state.sessionDone++;
+    }
+  },
+
+  async checkLatestVersion() {
+    // TODO: point at a real source (e.g. a GitHub releases manifest or a /version endpoint)
+    return '0.5';
+  },
 };
+
+// Tiny semver-ish comparator: returns true if `a` is newer than `b`.
+function isNewer(a, b) {
+  const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
+  const pb = String(b).split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const da = pa[i] || 0, db = pb[i] || 0;
+    if (da !== db) return da > db;
+  }
+  return false;
+}
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -151,6 +204,17 @@ function pendingTxns() {
 
 function totalPendingCount() {
   return state.transactions.filter(t => t.categoryId == null && t.amount < 0).length;
+}
+
+function sortedPending() {
+  const { key, dir } = state.sort;
+  const mul = dir === 'asc' ? 1 : -1;
+  return pendingTxns().slice().sort((a, b) => {
+    if (key === 'date') return mul * a.date.localeCompare(b.date);
+    if (key === 'desc') return mul * a.desc.localeCompare(b.desc);
+    if (key === 'amount') return mul * (a.amount - b.amount);
+    return 0;
+  });
 }
 
 // -----------------------------------------------------------------------------
@@ -455,7 +519,7 @@ function escapeHtml(s) {
 // Render — Categorize view
 // -----------------------------------------------------------------------------
 function renderCategorize() {
-  const pending = pendingTxns();
+  const pending = sortedPending();
 
   $('#pendingCount').textContent = pending.length;
   $('#progressDone').textContent = state.sessionDone;
@@ -482,8 +546,10 @@ function renderCategorize() {
     $('#assignRail').style.pointerEvents = 'auto';
     list.innerHTML = pending.map(t => {
       const focused = t.id === state.focusedId;
+      const selected = state.selectedIds.size > 1 && state.selectedIds.has(t.id);
+      const cls = ['row', focused ? 'is-focused' : '', selected ? 'is-selected' : ''].filter(Boolean).join(' ');
       return `
-        <div class="row ${focused ? 'is-focused' : ''}" data-id="${t.id}" tabindex="0">
+        <div class="${cls}" data-id="${t.id}" tabindex="0">
           <div class="c-date">${shortDate(t.date)}</div>
           <div class="c-desc">${escapeHtml(t.desc)}</div>
           <div class="c-amount amount-debit">${fmtMoney(t.amount)}</div>
@@ -493,11 +559,55 @@ function renderCategorize() {
     }).join('');
   }
 
+  // Selection toolbar
+  $('#selectionToolbar').hidden = state.selectedIds.size <= 1;
+  $('#selectionCount').textContent = state.selectedIds.size;
+
   // Sidebar badge
   renderSidebar();
 
   // Rail
   renderRail();
+
+  // Sort header glyphs
+  $$('#txnTableHead [data-sort-key]').forEach(th => {
+    th.classList.toggle('is-sorted', th.dataset.sortKey === state.sort.key);
+  });
+  $$('#txnTableHead [data-sort-glyph]').forEach(g => {
+    g.textContent = g.dataset.sortGlyph === state.sort.key ? (state.sort.dir === 'asc' ? '↑' : '↓') : '';
+  });
+}
+
+function renderVersion() {
+  $('#appVersionText').textContent = state.version ? `v${state.version}` : '';
+  const hasUpdate = state.latestVersion
+    && isNewer(state.latestVersion, state.version)
+    && state.updateDismissed !== state.latestVersion;
+  $('#versionDot').hidden = !hasUpdate;
+  $('#appVersion').classList.toggle('has-update', hasUpdate);
+  if (!hasUpdate) closeVersionPopover();
+}
+
+let versionPopoverOpen = false;
+
+function openVersionPopover() {
+  if (!$('#appVersion').classList.contains('has-update')) return;
+  versionPopoverOpen = true;
+  $('#versionPopoverTitle').textContent = `v${state.latestVersion} available`;
+  $('#versionPopoverSub').textContent = `you're on v${state.version}`;
+  $('#versionPopover').hidden = false;
+}
+
+function closeVersionPopover() {
+  versionPopoverOpen = false;
+  $('#versionPopover').hidden = true;
+}
+
+function dismissUpdate() {
+  state.updateDismissed = state.latestVersion;
+  localStorage.setItem('spend.updateDismissed', state.latestVersion);
+  closeVersionPopover();
+  renderVersion();
 }
 
 function renderRail() {
@@ -507,6 +617,38 @@ function renderRail() {
       <span class="chip-dot" style="background:${c.color}"></span>
       <span>${escapeHtml(c.name)}</span>
     </button>
+  `).join('');
+
+  const extra = state.categories.length - 9;
+  $('#assignMoreBtn').textContent = extra > 0 ? `+${extra} more →` : 'All categories →';
+}
+
+// -----------------------------------------------------------------------------
+// Render — Assign panel (all categories, assignment-only)
+// -----------------------------------------------------------------------------
+function openAssignPanel() {
+  state.assignPanelOpen = true;
+  $('#assignPanel').hidden = false;
+  renderAssignPanel();
+}
+
+function closeAssignPanel() {
+  state.assignPanelOpen = false;
+  $('#assignPanel').hidden = true;
+}
+
+function renderAssignPanel() {
+  const selCount = state.selectedIds.size;
+  $('#assignPanelSub').textContent = selCount > 1
+    ? `Assign ${selCount} selected transactions`
+    : 'Click to assign the focused transaction';
+
+  $('#assignPanelList').innerHTML = state.categories.map((c, i) => `
+    <li class="assign-row" data-cat-id="${c.id}">
+      <span class="cat-num">${i < 9 ? i + 1 : ''}</span>
+      <span class="cat-dot" style="background:${c.color}"></span>
+      <span class="cat-name">${escapeHtml(c.name)}</span>
+    </li>
   `).join('');
 }
 
@@ -554,6 +696,26 @@ function renderDrawer() {
   // Next color preview
   const nextColor = `var(--${CAT_PALETTE[state.categories.length % CAT_PALETTE.length]})`;
   $('#newCatDot').style.background = nextColor;
+}
+
+// -----------------------------------------------------------------------------
+// Confirm dialog (generic, promise-based)
+// -----------------------------------------------------------------------------
+let confirmResolve = null;
+
+function openConfirm({ title, body, danger = false } = {}) {
+  $('#confirmTitle').textContent = title || 'Are you sure?';
+  $('#confirmBody').textContent = body || '';
+  const okBtn = $('#confirmOkBtn');
+  okBtn.className = danger ? 'btn btn-danger' : 'btn btn-primary';
+  $('#confirmDialog').hidden = false;
+  $('#confirmCancelBtn').focus();
+  return new Promise(resolve => { confirmResolve = resolve; });
+}
+
+function closeConfirm(result) {
+  $('#confirmDialog').hidden = true;
+  if (confirmResolve) { confirmResolve(result); confirmResolve = null; }
 }
 
 // -----------------------------------------------------------------------------
@@ -606,11 +768,48 @@ function bind() {
     if (!row) return;
   });
 
-  // ── Categorize: row click → focus
+  // ── Categorize: row click → focus / select
   $('#txnList').addEventListener('click', e => {
     const row = e.target.closest('[data-id]');
     if (!row) return;
-    state.focusedId = Number(row.dataset.id);
+    const id = Number(row.dataset.id);
+    const pending = sortedPending();
+
+    if (e.shiftKey && state.selectionAnchor != null) {
+      const ids = pending.map(t => t.id);
+      const from = ids.indexOf(state.selectionAnchor);
+      const to = ids.indexOf(id);
+      if (from >= 0 && to >= 0) {
+        const [lo, hi] = from <= to ? [from, to] : [to, from];
+        state.selectedIds = new Set(ids.slice(lo, hi + 1));
+      }
+      state.focusedId = id;
+    } else if (e.metaKey || e.ctrlKey) {
+      if (state.selectedIds.has(id)) state.selectedIds.delete(id);
+      else state.selectedIds.add(id);
+      state.focusedId = id;
+      state.selectionAnchor = id;
+    } else {
+      state.selectedIds = new Set([id]);
+      state.selectionAnchor = id;
+      state.focusedId = id;
+    }
+    renderCategorize();
+  });
+
+  // ── Selection toolbar
+  $('#selectionClearBtn').addEventListener('click', () => { clearSelection(); renderCategorize(); });
+
+  // ── Categorize: header click → sort
+  $('#txnTableHead').addEventListener('click', e => {
+    const th = e.target.closest('[data-sort-key]');
+    if (!th) return;
+    const key = th.dataset.sortKey;
+    if (state.sort.key === key) {
+      state.sort.dir = state.sort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+      state.sort = { key, dir: key === 'date' ? 'desc' : 'asc' };
+    }
     renderCategorize();
   });
 
@@ -623,6 +822,44 @@ function bind() {
 
   $('#skipBtn').addEventListener('click', () => skipFocused());
   $('#ignoreBtn').addEventListener('click', () => ignoreFocused());
+
+  // ── Assign panel
+  $('#assignMoreBtn').addEventListener('click', openAssignPanel);
+  $('#assignPanel').addEventListener('click', e => {
+    if (e.target.closest('[data-assign-panel-close]')) { closeAssignPanel(); return; }
+    const row = e.target.closest('[data-cat-id]');
+    if (row) { assignFocusedTo(Number(row.dataset.catId)); closeAssignPanel(); }
+  });
+
+  // ── Assign picker
+  $('#assignPicker').addEventListener('click', e => {
+    if (e.target.closest('[data-picker-close]')) { closeAssignPicker(); return; }
+    const item = e.target.closest('[data-cat-id]');
+    if (item) { assignFocusedTo(Number(item.dataset.catId)); closeAssignPicker(); }
+  });
+  $('#pickerInput').addEventListener('input', e => renderPickerList(e.target.value));
+  $('#pickerInput').addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); pickerIndex = Math.min(pickerItems.length - 1, pickerIndex + 1); renderPickerList($('#pickerInput').value); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); pickerIndex = Math.max(0, pickerIndex - 1); renderPickerList($('#pickerInput').value); }
+    else if (e.key === 'Enter') { e.preventDefault(); pickerAssignActive(); }
+  });
+
+  // ── Confirm dialog
+  $('#confirmDialog').addEventListener('click', e => {
+    if (e.target.closest('[data-confirm-cancel]')) closeConfirm(false);
+  });
+  $('#confirmOkBtn').addEventListener('click', () => closeConfirm(true));
+
+  // ── Version popover
+  $('#appVersion').addEventListener('click', () => {
+    versionPopoverOpen ? closeVersionPopover() : openVersionPopover();
+  });
+  $('#versionDismissBtn').addEventListener('click', e => { e.stopPropagation(); dismissUpdate(); });
+  document.addEventListener('click', e => {
+    if (!versionPopoverOpen) return;
+    if (e.target.closest('#versionPopover') || e.target.closest('#appVersion')) return;
+    closeVersionPopover();
+  });
 
   // ── Keyboard
   window.addEventListener('keydown', onKey);
@@ -709,6 +946,10 @@ function bind() {
       const txnDtos = await fetch(`/api/transactions?startDate=${sixMonthsAgoDate()}`).then(r => r.json());
       state.transactions = txnDtos.map(mapTxn);
       state.sessionDone = 0;
+      state.filter = 'all';
+      $$('#filterPills .pill').forEach(p => p.classList.toggle('pill-active', p.dataset.filter === 'all'));
+      const firstUncat = state.transactions.find(t => t.categoryId == null && t.amount < 0);
+      state.focusedId = firstUncat ? firstUncat.id : null;
 
       $('#uploadModal').hidden = true;
       bankSelect.value = ''; fileInput.value = '';
@@ -716,6 +957,7 @@ function bind() {
       uploadConfirm.textContent = 'Upload';
       uploadConfirm.disabled = true;
 
+      goto('categorize');
       renderSpend();
       renderCategorize();
       renderSidebar();
@@ -732,6 +974,8 @@ function bind() {
 // Categorize actions
 // -----------------------------------------------------------------------------
 async function assignFocusedTo(catId) {
+  if (state.selectedIds.size > 1) return assignSelectionTo(catId);
+
   if (!state.focusedId) return;
   const txn = state.transactions.find(t => t.id === state.focusedId);
   if (!txn) return;
@@ -739,7 +983,7 @@ async function assignFocusedTo(catId) {
   if (!cat) return;
 
   // Move focus to next pending before mutating
-  const pending = pendingTxns();
+  const pending = sortedPending();
   const idx = pending.findIndex(t => t.id === state.focusedId);
   const next = pending[idx + 1] || pending[idx - 1] || null;
 
@@ -753,30 +997,71 @@ async function assignFocusedTo(catId) {
   });
 }
 
-async function undoLast() {
-  const last = state.undo.pop();
-  if (!last) return;
-  const t = state.transactions.find(x => x.id === last.txnId);
+async function assignSelectionTo(catId) {
+  const cat = state.categories.find(c => c.id === catId);
+  if (!cat) return;
+  const ids = [...state.selectedIds];
+  if (ids.length === 0) return;
+
+  const pending = sortedPending();
+  const lastIdx = Math.max(...ids.map(id => pending.findIndex(t => t.id === id)));
+  const next = pending.slice(lastIdx + 1).find(t => !state.selectedIds.has(t.id));
+
+  await api.categorizeBulk(ids, cat.id);
+  clearSelection();
+  state.focusedId = next ? next.id : null;
+
+  renderCategorize();
+  toast(`Assigned ${ids.length} to ${cat.name}`, {
+    undoLabel: 'Undo',
+    onUndo: () => undoLast(),
+  });
+}
+
+function clearSelection() {
+  state.selectedIds.clear();
+  state.selectionAnchor = null;
+}
+
+async function revertOne(entry) {
+  const t = state.transactions.find(x => x.id === entry.txnId);
   if (!t) return;
 
-  if (last.prev === null) {
-    await fetch(`/api/transactions/${last.txnId}/category`, { method: 'DELETE' });
+  if (entry.prev === null) {
+    await fetch(`/api/transactions/${entry.txnId}/category`, { method: 'DELETE' });
   } else {
-    await fetch(`/api/transactions/${last.txnId}/category`, {
+    await fetch(`/api/transactions/${entry.txnId}/category`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ categoryId: last.prev }),
+      body: JSON.stringify({ categoryId: entry.prev }),
     });
   }
 
-  if (last.prev == null && t.categoryId != null) state.sessionDone = Math.max(0, state.sessionDone - 1);
-  t.categoryId = last.prev;
-  state.focusedId = t.id;
+  if (entry.prev == null && t.categoryId != null) state.sessionDone = Math.max(0, state.sessionDone - 1);
+  t.categoryId = entry.prev;
+  return t.id;
+}
+
+async function undoLast() {
+  const last = state.undo.pop();
+  if (!last) return;
+
+  if (Array.isArray(last)) {
+    let firstId = null;
+    for (const entry of last) {
+      const id = await revertOne(entry);
+      if (firstId == null) firstId = id;
+    }
+    if (firstId != null) state.focusedId = firstId;
+  } else {
+    const id = await revertOne(last);
+    if (id != null) state.focusedId = id;
+  }
   renderCategorize();
 }
 
 function skipFocused() {
-  const pending = pendingTxns();
+  const pending = sortedPending();
   const idx = pending.findIndex(t => t.id === state.focusedId);
   const next = pending[idx + 1] || pending[0];
   if (next) {
@@ -792,7 +1077,7 @@ function ignoreFocused() {
 }
 
 function moveFocus(dir) {
-  const pending = pendingTxns();
+  const pending = sortedPending();
   if (pending.length === 0) return;
   const idx = pending.findIndex(t => t.id === state.focusedId);
   let next = idx + dir;
@@ -803,6 +1088,49 @@ function moveFocus(dir) {
   // Scroll into view
   const row = $(`.row[data-id="${state.focusedId}"]`);
   if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+// -----------------------------------------------------------------------------
+// Assign picker (type-to-search, triggered by "/")
+// -----------------------------------------------------------------------------
+let pickerOpen = false;
+let pickerIndex = 0;
+let pickerItems = [];
+
+function openAssignPicker() {
+  pickerOpen = true;
+  pickerIndex = 0;
+  $('#assignPicker').hidden = false;
+  $('#pickerInput').value = '';
+  renderPickerList('');
+  setTimeout(() => $('#pickerInput').focus(), 0);
+}
+
+function closeAssignPicker() {
+  pickerOpen = false;
+  $('#assignPicker').hidden = true;
+}
+
+function renderPickerList(query) {
+  const q = query.trim().toLowerCase();
+  pickerItems = state.categories.filter(c => c.name.toLowerCase().includes(q));
+  if (pickerIndex >= pickerItems.length) pickerIndex = Math.max(0, pickerItems.length - 1);
+
+  $('#pickerList').innerHTML = pickerItems.length === 0
+    ? `<li class="picker-empty">No matching categories</li>`
+    : pickerItems.map((c, i) => `
+        <li class="picker-item ${i === pickerIndex ? 'is-active' : ''}" data-cat-id="${c.id}">
+          <span class="cat-dot" style="background:${c.color}"></span>
+          <span>${escapeHtml(c.name)}</span>
+        </li>
+      `).join('');
+}
+
+function pickerAssignActive() {
+  const cat = pickerItems[pickerIndex];
+  if (!cat) return;
+  assignFocusedTo(cat.id);
+  closeAssignPicker();
 }
 
 // -----------------------------------------------------------------------------
@@ -842,7 +1170,8 @@ async function confirmDelete(id) {
   const msg = count > 0
     ? `Delete "${cat.name}"? ${count} transaction${count === 1 ? '' : 's'} will be uncategorized.`
     : `Delete "${cat.name}"?`;
-  if (!confirm(msg)) return;
+  const ok = await openConfirm({ title: `Delete category`, body: msg, danger: true });
+  if (!ok) return;
   await api.deleteCategory(id);
   renderDrawer();
   renderRail();
@@ -907,10 +1236,15 @@ function onKey(e) {
   const target = e.target;
   const isTyping = target.matches('input, textarea, select, [contenteditable="true"]');
 
-  // Escape: close drawer/modal first
+  // Escape: close topmost overlay first
   if (e.key === 'Escape') {
+    if (!$('#confirmDialog').hidden) { closeConfirm(false); e.preventDefault(); return; }
     if (!$('#uploadModal').hidden) { $('#uploadModal').hidden = true; e.preventDefault(); return; }
+    if (versionPopoverOpen) { closeVersionPopover(); e.preventDefault(); return; }
+    if (pickerOpen) { closeAssignPicker(); e.preventDefault(); return; }
+    if (state.assignPanelOpen) { closeAssignPanel(); e.preventDefault(); return; }
     if (drawerOpen) { closeDrawer(); e.preventDefault(); return; }
+    if (state.selectedIds.size > 1) { clearSelection(); renderCategorize(); e.preventDefault(); return; }
     return;
   }
 
@@ -933,8 +1267,9 @@ function onKey(e) {
 
   // Categorize-only shortcuts
   if (currentRoute() !== 'categorize') return;
-  if (drawerOpen) return;
+  if (drawerOpen || pickerOpen || state.assignPanelOpen) return;
 
+  if (e.key === '/') { e.preventDefault(); openAssignPicker(); return; }
   if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveFocus(1); return; }
   if (e.key === 'k' || e.key === 'ArrowUp')   { e.preventDefault(); moveFocus(-1); return; }
   if (e.key === 's') { e.preventDefault(); skipFocused(); return; }
@@ -975,8 +1310,14 @@ async function init() {
   renderRail();
   bind();
 
-  fetch('/api/info').then(r => r.json()).then(info => {
-    $('#appVersion').textContent = `v${info.version}`;
+  fetch('/api/info').then(r => r.json()).then(async info => {
+    state.version = info.version;
+    try {
+      state.latestVersion = await api.checkLatestVersion();
+    } catch {
+      state.latestVersion = null;
+    }
+    renderVersion();
   }).catch(() => {});
 }
 

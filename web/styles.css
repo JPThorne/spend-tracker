@@ -226,9 +226,55 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  position: relative;
 }
 .foot-line { font-size: 11px; color: var(--ink-3); font-family: var(--font-mono); }
 .foot-dim { color: var(--ink-4); }
+.foot-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  cursor: default;
+  width: fit-content;
+}
+.foot-version.has-update { cursor: pointer; }
+.version-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.version-popover {
+  position: absolute;
+  bottom: 100%;
+  left: 8px;
+  margin-bottom: 8px;
+  width: 240px;
+  background: var(--surface);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-lg), 0 0 0 1px var(--line);
+  padding: 14px 14px 12px;
+  z-index: 50;
+  animation: pop-in 140ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+.version-popover-head {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.version-popover .muted { margin: 0 0 10px; }
+.version-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.version-popover-actions .ghost-btn { padding: 5px 8px; }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .btn {
@@ -255,6 +301,13 @@ body {
 .btn-primary:active:not(:disabled) { transform: translateY(0); }
 .btn-sm { padding: 6px 10px; font-size: 12.5px; }
 .btn .i { width: 14px; height: 14px; }
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+.btn-danger:hover:not(:disabled) { background: #983a2c; transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.btn-danger:active:not(:disabled) { transform: translateY(0); }
 
 .ghost-btn {
   display: inline-flex;
@@ -632,6 +685,8 @@ body {
   user-select: none;
 }
 .th:hover { color: var(--ink-1); }
+.sort-glyph { display: inline-block; width: 8px; color: var(--ink); }
+.th.is-sorted { color: var(--ink-1); }
 .col-amount, .col-status { text-align: right; }
 .col-status { text-align: left; }
 
@@ -660,6 +715,28 @@ body {
   background: var(--accent);
 }
 .row.is-categorized { opacity: 0.6; }
+.row.is-selected {
+  background: var(--accent-soft);
+}
+.row.is-selected::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--accent);
+}
+.selection-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--accent-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  color: var(--ink-1);
+  font-weight: 500;
+}
 .row .c-date { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 .row .c-desc {
   font-size: 13.5px;
@@ -781,6 +858,45 @@ body {
 .chip-dot { width: 8px; height: 8px; border-radius: 999px; }
 
 .rail-actions { display: flex; gap: 4px; flex-shrink: 0; padding-left: 8px; border-left: 1px solid var(--line); }
+.rail-more { flex-shrink: 0; white-space: nowrap; }
+
+/* ── Assign panel ────────────────────────────────────────────────────────── */
+.assign-list .assign-row {
+  display: grid;
+  grid-template-columns: 22px 14px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 120ms;
+}
+.assign-list .assign-row:hover { background: var(--bg-soft); }
+
+/* ── Assign picker (type-to-search) ─────────────────────────────────────── */
+.picker-modal { max-width: 360px; padding: 0; }
+.picker-input-row { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.picker-input { width: 100%; }
+.picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  font-size: 13.5px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.picker-item:hover { background: var(--bg-soft); }
+.picker-item.is-active { background: var(--accent-soft); }
+.picker-empty { padding: 16px; text-align: center; color: var(--ink-3); font-size: 13px; }
 
 /* ── Drawer ──────────────────────────────────────────────────────────────── */
 .drawer-root {
@@ -956,6 +1072,7 @@ body {
   animation: pop-in 180ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
   transform-origin: center;
 }
+.modal-sm { max-width: 380px; }
 .modal-head {
   display: flex;
   justify-content: space-between;
