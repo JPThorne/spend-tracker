@@ -756,6 +756,28 @@ function closeConfirm(result) {
 }
 
 // -----------------------------------------------------------------------------
+// Upload result modal
+// -----------------------------------------------------------------------------
+function showUploadResult(result) {
+  const parts = [`Imported ${result.successfulImports} transaction${result.successfulImports === 1 ? '' : 's'}`];
+  if (result.duplicatesSkipped > 0) {
+    parts.push(`skipped ${result.duplicatesSkipped} duplicate${result.duplicatesSkipped === 1 ? '' : 's'} already in your account`);
+  }
+  $('#uploadResultSummary').textContent = parts.join(' — ') + '.';
+
+  const list = $('#uploadResultDuplicates');
+  if (result.duplicateWarnings && result.duplicateWarnings.length > 0) {
+    list.hidden = false;
+    list.innerHTML = result.duplicateWarnings.map(w => `<li>${escapeHtml(w)}</li>`).join('');
+  } else {
+    list.hidden = true;
+    list.innerHTML = '';
+  }
+
+  $('#uploadResultModal').hidden = false;
+}
+
+// -----------------------------------------------------------------------------
 // Toasts
 // -----------------------------------------------------------------------------
 function toast(msg, { undoLabel, onUndo, duration = 4000 } = {}) {
@@ -887,6 +909,11 @@ function bind() {
   });
   $('#confirmOkBtn').addEventListener('click', () => closeConfirm(true));
 
+  // ── Upload result modal
+  $('#uploadResultModal').addEventListener('click', e => {
+    if (e.target.closest('[data-result-close]')) $('#uploadResultModal').hidden = true;
+  });
+
   // ── Version popover
   $('#appVersion').addEventListener('click', () => {
     versionPopoverOpen ? closeVersionPopover() : openVersionPopover();
@@ -998,7 +1025,7 @@ function bind() {
       renderSpend();
       renderCategorize();
       renderSidebar();
-      toast(`Imported ${result.successfulImports} transaction${result.successfulImports === 1 ? '' : 's'}`);
+      showUploadResult(result);
     } catch {
       uploadConfirm.textContent = 'Upload';
       uploadConfirm.disabled = false;
@@ -1301,6 +1328,7 @@ function onKey(e) {
   // Escape: close topmost overlay first
   if (e.key === 'Escape') {
     if (!$('#confirmDialog').hidden) { closeConfirm(false); e.preventDefault(); return; }
+    if (!$('#uploadResultModal').hidden) { $('#uploadResultModal').hidden = true; e.preventDefault(); return; }
     if (!$('#uploadModal').hidden) { $('#uploadModal').hidden = true; e.preventDefault(); return; }
     if (versionPopoverOpen) { closeVersionPopover(); e.preventDefault(); return; }
     if (pickerOpen) { closeAssignPicker(); e.preventDefault(); return; }

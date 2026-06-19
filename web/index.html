@@ -290,6 +290,26 @@
     </div>
   </div>
 
+  <!-- Upload result (shows duplicates skipped) -->
+  <div class="modal-root" id="uploadResultModal" hidden>
+    <div class="modal-scrim" data-result-close></div>
+    <div class="modal modal-sm" role="dialog" aria-labelledby="uploadResultTitle">
+      <header class="modal-head">
+        <h2 class="h2" id="uploadResultTitle">Upload complete</h2>
+        <button class="icon-btn" data-result-close aria-label="Close">
+          <svg viewBox="0 0 16 16" class="i"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </header>
+      <div class="modal-body">
+        <p class="muted" id="uploadResultSummary"></p>
+        <ul class="duplicate-list" id="uploadResultDuplicates" hidden></ul>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn btn-primary" data-result-close>OK</button>
+      </footer>
+    </div>
+  </div>
+
   <!-- Confirm dialog (generic, reusable) -->
   <div class="modal-root" id="confirmDialog" hidden>
     <div class="modal-scrim" data-confirm-cancel></div>
