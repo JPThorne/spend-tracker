@@ -51,6 +51,18 @@ public class TransactionRepository(SpendTrackerDbContext context) : Repository<T
         return count;
     }
 
+    public async Task<int> DeleteByCategoryIdAsync(int categoryId)
+    {
+        var transactions = await Context.Transactions
+            .Where(t => t.CategoryId == categoryId)
+            .ToListAsync();
+
+        var count = transactions.Count;
+        Context.Transactions.RemoveRange(transactions);
+
+        return count;
+    }
+
     public async Task<Dictionary<string, decimal>> GetMonthlySpendingSummaryAsync(int year)
     {
         var transactions = await Context.Transactions

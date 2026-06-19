@@ -103,11 +103,15 @@ const api = {
     if (cat) cat.name = name;
   },
 
-  async deleteCategory(id) {
-    await fetch(`/api/categories/${id}`, { method: 'DELETE' });
+  async deleteCategory(id, deleteTransactions = false) {
+    await fetch(`/api/categories/${id}?deleteTransactions=${deleteTransactions}`, { method: 'DELETE' });
     const idx = state.categories.findIndex(c => c.id === id);
     if (idx >= 0) state.categories.splice(idx, 1);
-    state.transactions.forEach(t => { if (t.categoryId === id) t.categoryId = null; });
+    if (deleteTransactions) {
+      state.transactions = state.transactions.filter(t => t.categoryId !== id);
+    } else {
+      state.transactions.forEach(t => { if (t.categoryId === id) t.categoryId = null; });
+    }
   },
 
   async categorizeBulk(txnIds, categoryId) {
@@ -703,14 +707,47 @@ function renderDrawer() {
 // -----------------------------------------------------------------------------
 let confirmResolve = null;
 
-function openConfirm({ title, body, danger = false } = {}) {
+// `choices`, if given, renders a radio group in the dialog body and the resolved
+// value is the selected choice's `value` (or `false` if cancelled) instead of a boolean.
+function openConfirm({ title, body, danger = false, okLabel, choices = null } = {}) {
   $('#confirmTitle').textContent = title || 'Are you sure?';
   $('#confirmBody').textContent = body || '';
+
   const okBtn = $('#confirmOkBtn');
-  okBtn.className = danger ? 'btn btn-danger' : 'btn btn-primary';
+  const choicesEl = $('#confirmChoices');
+  let selected = choices ? (choices.find(c => c.default) || choices[0]).value : null;
+
+  const applyOkStyle = () => {
+    const isDanger = choices ? !!choices.find(c => c.value === selected)?.danger : danger;
+    okBtn.className = isDanger ? 'btn btn-danger' : 'btn btn-primary';
+    okBtn.textContent = okLabel || (isDanger ? 'Delete' : 'Confirm');
+  };
+
+  if (choices) {
+    choicesEl.hidden = false;
+    choicesEl.innerHTML = choices.map(c => `
+      <label class="confirm-choice ${c.danger ? 'is-danger' : ''}">
+        <input type="radio" name="confirmChoice" value="${c.value}" ${c.value === selected ? 'checked' : ''}>
+        <span>
+          <span class="confirm-choice-label">${escapeHtml(c.label)}</span>
+          ${c.hint ? `<span class="confirm-choice-hint">${escapeHtml(c.hint)}</span>` : ''}
+        </span>
+      </label>
+    `).join('');
+    choicesEl.querySelectorAll('input').forEach(input => {
+      input.addEventListener('change', () => { selected = input.value; applyOkStyle(); });
+    });
+  } else {
+    choicesEl.hidden = true;
+    choicesEl.innerHTML = '';
+  }
+
+  applyOkStyle();
   $('#confirmDialog').hidden = false;
   $('#confirmCancelBtn').focus();
-  return new Promise(resolve => { confirmResolve = resolve; });
+  return new Promise(resolve => {
+    confirmResolve = confirmed => resolve(confirmed ? (choices ? selected : true) : false);
+  });
 }
 
 function closeConfirm(result) {
@@ -1167,18 +1204,43 @@ async function confirmDelete(id) {
   const cat = state.categories.find(c => c.id === id);
   if (!cat) return;
   const count = state.transactions.filter(t => t.categoryId === id).length;
-  const msg = count > 0
-    ? `Delete "${cat.name}"? ${count} transaction${count === 1 ? '' : 's'} will be uncategorized.`
-    : `Delete "${cat.name}"?`;
-  const ok = await openConfirm({ title: `Delete category`, body: msg, danger: true });
-  if (!ok) return;
-  await api.deleteCategory(id);
+
+  let deleteTransactions = false;
+  if (count > 0) {
+    const choice = await openConfirm({
+      title: 'Delete category',
+      body: `"${cat.name}" has ${count} transaction${count === 1 ? '' : 's'}. What should happen to them?`,
+      choices: [
+        {
+          value: 'uncategorize',
+          label: 'Move to Uncategorized',
+          hint: 'They’ll show up in the Categorize inbox to sort later.',
+          default: true,
+        },
+        {
+          value: 'delete',
+          label: `Delete ${count} transaction${count === 1 ? '' : 's'}`,
+          hint: 'Removed for good — spend totals will drop accordingly.',
+          danger: true,
+        },
+      ],
+    });
+    if (!choice) return;
+    deleteTransactions = choice === 'delete';
+  } else {
+    const ok = await openConfirm({ title: 'Delete category', body: `Delete "${cat.name}"?`, danger: true });
+    if (!ok) return;
+  }
+
+  await api.deleteCategory(id, deleteTransactions);
   renderDrawer();
   renderRail();
   renderSidebar();
   if (currentRoute() === 'categorize') renderCategorize();
   if (currentRoute() === 'spend') renderSpend();
-  toast(`Deleted "${cat.name}"`);
+  toast(deleteTransactions
+    ? `Deleted "${cat.name}" and ${count} transaction${count === 1 ? '' : 's'}`
+    : `Deleted "${cat.name}"`);
 }
 
 // -----------------------------------------------------------------------------

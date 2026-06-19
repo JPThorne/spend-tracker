@@ -9,5 +9,6 @@ public interface ITransactionRepository : IRepository<Transaction>
     Task<IEnumerable<Transaction>> GetByDateRangeAsync(DateTime startDate, DateTime endDate);
     Task AddRangeAsync(IEnumerable<Transaction> transactions);
     Task<int> DeleteByBatchIdAsync(Guid uploadBatchId);
+    Task<int> DeleteByCategoryIdAsync(int categoryId);
     Task<Dictionary<string, decimal>> GetMonthlySpendingSummaryAsync(int year);
 }

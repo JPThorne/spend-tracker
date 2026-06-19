@@ -108,9 +108,9 @@ public class CategoriesController(
     }
 
     [HttpDelete("{id:int}")]
-    public async Task<ActionResult> DeleteCategory(int id)
+    public async Task<ActionResult> DeleteCategory(int id, [FromQuery] bool deleteTransactions = false)
     {
-        var result = await categoryService.DeleteAsync(id);
+        var result = await categoryService.DeleteAsync(id, deleteTransactions);
         if (!result.Success)
         {
             logger.LogWarning("Delete category failed: {Reason} (id={Id})", result.Error?.Message, id);

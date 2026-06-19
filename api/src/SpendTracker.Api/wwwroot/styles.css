@@ -1094,6 +1094,24 @@ body {
   border-top: 1px solid var(--line);
 }
 
+.confirm-choices { display: flex; flex-direction: column; gap: 8px; }
+.confirm-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+.confirm-choice:hover { background: var(--bg-soft); }
+.confirm-choice input { margin-top: 3px; accent-color: var(--ink); flex-shrink: 0; }
+.confirm-choice:has(input:checked) { border-color: var(--ink-3); background: var(--bg-soft); }
+.confirm-choice.is-danger:has(input:checked) { border-color: var(--danger); background: var(--danger-soft); }
+.confirm-choice-label { display: block; font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.confirm-choice-hint { display: block; font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field-label { font-size: 12px; font-weight: 500; color: var(--ink-2); }
 .select, .input {

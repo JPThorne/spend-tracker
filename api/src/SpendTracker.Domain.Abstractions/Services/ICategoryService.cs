@@ -11,6 +11,6 @@ public interface ICategoryService
     Task<ServiceResult<CategorySpendingDto>> GetMonthlySpendingAsync(int id, int year);
     Task<ServiceResult<CategoryDto>> CreateAsync(CreateCategoryDto createDto);
     Task<ServiceResult<CategoryDto>> UpdateAsync(int id, UpdateCategoryDto updateDto);
-    Task<ServiceResult<bool>> DeleteAsync(int id);
+    Task<ServiceResult<bool>> DeleteAsync(int id, bool deleteTransactions = false);
     Task<ServiceResult<bool>> ReorderAsync(IEnumerable<ReorderCategoryDto> items);
 }

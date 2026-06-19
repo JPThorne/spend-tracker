@@ -4,7 +4,7 @@ using SpendTracker.Domain.Repositories;
 
 namespace SpendTracker.Domain.Services;
 
-public class CategoryService(ICategoryRepository categoryRepository) : ICategoryService
+public class CategoryService(ICategoryRepository categoryRepository, ITransactionRepository transactionRepository) : ICategoryService
 {
     public async Task<ServiceResult<IEnumerable<CategoryDto>>> GetAllAsync(DateTime? startDate, DateTime? endDate)
     {
@@ -212,7 +212,7 @@ public class CategoryService(ICategoryRepository categoryRepository) : ICategory
         return ServiceResult<CategoryDto>.Ok(categoryDto);
     }
 
-    public async Task<ServiceResult<bool>> DeleteAsync(int id)
+    public async Task<ServiceResult<bool>> DeleteAsync(int id, bool deleteTransactions = false)
     {
         var category = await categoryRepository.GetByIdAsync(id);
         if (category == null)
@@ -220,6 +220,12 @@ public class CategoryService(ICategoryRepository categoryRepository) : ICategory
             return ServiceResult<bool>.Fail(ServiceErrorType.NotFound, $"Category with ID {id} not found");
         }
 
+        if (deleteTransactions)
+        {
+            await transactionRepository.DeleteByCategoryIdAsync(id);
+        }
+
+        // When deleteTransactions is false, the FK's ON DELETE SET NULL uncategorizes the transactions.
         await categoryRepository.DeleteAsync(category);
         await categoryRepository.SaveChangesAsync();
 
