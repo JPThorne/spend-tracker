@@ -253,6 +253,25 @@
     </div>
   </div>
 
+  <!-- Category transactions (view + remove individual transactions in a category) -->
+  <div class="modal-root" id="categoryTxnsModal" hidden>
+    <div class="modal-scrim" data-cat-txns-close></div>
+    <div class="modal" role="dialog" aria-labelledby="categoryTxnsTitle">
+      <header class="modal-head">
+        <div>
+          <h2 class="h2" id="categoryTxnsTitle"></h2>
+          <p class="muted small" id="categoryTxnsSub"></p>
+        </div>
+        <button class="icon-btn" data-cat-txns-close aria-label="Close">
+          <svg viewBox="0 0 16 16" class="i"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </header>
+      <div class="modal-body">
+        <ul class="cat-txn-list" id="categoryTxnsList"></ul>
+      </div>
+    </div>
+  </div>
+
   <!-- Upload sheet -->
   <div class="modal-root" id="uploadModal" hidden>
     <div class="modal-scrim" data-modal-close></div>

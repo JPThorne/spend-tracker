@@ -80,6 +80,18 @@ const api = {
     if (prev == null && categoryId != null) state.sessionDone++;
   },
 
+  async uncategorize(txnId) {
+    const txn = state.transactions.find(t => t.id === txnId);
+    if (!txn) return;
+    const prev = txn.categoryId;
+    state.undo.push({ txnId, prev });
+    if (state.undo.length > 50) state.undo.shift();
+
+    await fetch(`/api/transactions/${txnId}/category`, { method: 'DELETE' });
+
+    txn.categoryId = null;
+  },
+
   async addCategory(name) {
     const res = await fetch('/api/categories', {
       method: 'POST',
@@ -657,6 +669,68 @@ function renderAssignPanel() {
 }
 
 // -----------------------------------------------------------------------------
+// Category transactions modal (view + remove individual transactions)
+// -----------------------------------------------------------------------------
+let categoryTxnsOpenId = null;
+
+function openCategoryTxnsModal(categoryId) {
+  categoryTxnsOpenId = categoryId;
+  $('#categoryTxnsModal').hidden = false;
+  renderCategoryTxnsModal();
+}
+
+function closeCategoryTxnsModal() {
+  categoryTxnsOpenId = null;
+  $('#categoryTxnsModal').hidden = true;
+}
+
+function renderCategoryTxnsModal() {
+  const cat = state.categories.find(c => c.id === categoryTxnsOpenId);
+  if (!cat) return;
+
+  const txns = state.transactions
+    .filter(t => t.categoryId === cat.id)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const total = txns.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+  $('#categoryTxnsTitle').textContent = cat.name;
+  $('#categoryTxnsSub').textContent = txns.length === 0
+    ? 'No transactions'
+    : `${txns.length} transaction${txns.length === 1 ? '' : 's'} · ${fmtMoney(total)}`;
+
+  $('#categoryTxnsList').innerHTML = txns.length === 0
+    ? `<li class="picker-empty">No transactions in this category</li>`
+    : txns.map(t => `
+        <li class="cat-txn-row" data-id="${t.id}">
+          <span class="tx-dot" style="background:${cat.color}"></span>
+          <div style="min-width:0">
+            <div class="tx-name">${escapeHtml(t.desc)}</div>
+            <div class="tx-meta">${shortDate(t.date)}</div>
+          </div>
+          <span class="tx-amt tabular">${fmtMoney(t.amount)}</span>
+          <button class="cat-action del" data-action="remove" aria-label="Remove from category">${icons.trash()}</button>
+        </li>
+      `).join('');
+}
+
+async function removeFromCategory(txnId) {
+  const cat = state.categories.find(c => c.id === categoryTxnsOpenId);
+  await api.uncategorize(txnId);
+  renderCategoryTxnsModal();
+  renderDrawer();
+  if (currentRoute() === 'spend') renderSpend();
+  toast(`Removed from "${cat ? cat.name : 'category'}"`, {
+    undoLabel: 'Undo',
+    onUndo: async () => {
+      await undoLast();
+      renderCategoryTxnsModal();
+      renderDrawer();
+      if (currentRoute() === 'spend') renderSpend();
+    },
+  });
+}
+
+// -----------------------------------------------------------------------------
 // Render — Drawer (Categories)
 // -----------------------------------------------------------------------------
 let drawerOpen = false;
@@ -821,10 +895,21 @@ function bind() {
   // Sidebar categories button + global "C" key
   $('#openCategoriesBtn').addEventListener('click', openDrawer);
 
-  // Bar row in spend — placeholder for future category deep-dive
+  // Bar row in spend — opens the category's transactions
   $('#catBars').addEventListener('click', e => {
     const row = e.target.closest('[data-cat-id]');
     if (!row) return;
+    openCategoryTxnsModal(Number(row.dataset.catId));
+  });
+
+  // ── Category transactions modal
+  $('#categoryTxnsModal').addEventListener('click', e => {
+    if (e.target.closest('[data-cat-txns-close]')) { closeCategoryTxnsModal(); return; }
+    const btn = e.target.closest('[data-action="remove"]');
+    if (btn) {
+      const row = e.target.closest('[data-id]');
+      removeFromCategory(Number(row.dataset.id));
+    }
   });
 
   // ── Categorize: row click → focus / select
@@ -939,15 +1024,19 @@ function bind() {
     if (e.target.closest('[data-drawer-close]')) closeDrawer();
   });
 
-  // Drawer: edit / delete / rename
+  // Drawer: edit / delete / rename / view transactions
   $('#catList').addEventListener('click', e => {
     const row = e.target.closest('.cat-row');
     if (!row) return;
     const id = Number(row.dataset.catId);
     const btn = e.target.closest('[data-action]');
-    if (!btn) return;
-    if (btn.dataset.action === 'edit') startRename(row, id);
-    if (btn.dataset.action === 'delete') confirmDelete(id);
+    if (btn) {
+      if (btn.dataset.action === 'edit') startRename(row, id);
+      if (btn.dataset.action === 'delete') confirmDelete(id);
+      return;
+    }
+    if (e.target.closest('.cat-grip') || e.target.closest('.cat-name-edit')) return;
+    openCategoryTxnsModal(id);
   });
 
   // Add new category
@@ -1351,6 +1440,7 @@ function onKey(e) {
     if (versionPopoverOpen) { closeVersionPopover(); e.preventDefault(); return; }
     if (pickerOpen) { closeAssignPicker(); e.preventDefault(); return; }
     if (state.assignPanelOpen) { closeAssignPanel(); e.preventDefault(); return; }
+    if (categoryTxnsOpenId != null) { closeCategoryTxnsModal(); e.preventDefault(); return; }
     if (drawerOpen) { closeDrawer(); e.preventDefault(); return; }
     if (state.selectedIds.size > 1) { clearSelection(); renderCategorize(); e.preventDefault(); return; }
     return;
@@ -1375,7 +1465,7 @@ function onKey(e) {
 
   // Categorize-only shortcuts
   if (currentRoute() !== 'categorize') return;
-  if (drawerOpen || pickerOpen || state.assignPanelOpen) return;
+  if (drawerOpen || pickerOpen || state.assignPanelOpen || categoryTxnsOpenId != null) return;
 
   if (e.key === '/') { e.preventDefault(); openAssignPicker(); return; }
   if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveFocus(1); return; }
