@@ -893,6 +893,7 @@ function bind() {
   // ── Assign picker
   $('#assignPicker').addEventListener('click', e => {
     if (e.target.closest('[data-picker-close]')) { closeAssignPicker(); return; }
+    if (e.target.closest('[data-create-cat]')) { pickerCreateAndAssign($('#pickerInput').value.trim()); return; }
     const item = e.target.closest('[data-cat-id]');
     if (item) { assignFocusedTo(Number(item.dataset.catId)); closeAssignPicker(); }
   });
@@ -900,7 +901,12 @@ function bind() {
   $('#pickerInput').addEventListener('keydown', e => {
     if (e.key === 'ArrowDown') { e.preventDefault(); pickerIndex = Math.min(pickerItems.length - 1, pickerIndex + 1); renderPickerList($('#pickerInput').value); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); pickerIndex = Math.max(0, pickerIndex - 1); renderPickerList($('#pickerInput').value); }
-    else if (e.key === 'Enter') { e.preventDefault(); pickerAssignActive(); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      const query = $('#pickerInput').value.trim();
+      if (pickerItems.length === 0 && query) pickerCreateAndAssign(query);
+      else pickerAssignActive();
+    }
   });
 
   // ── Confirm dialog
@@ -1181,7 +1187,9 @@ function renderPickerList(query) {
   if (pickerIndex >= pickerItems.length) pickerIndex = Math.max(0, pickerItems.length - 1);
 
   $('#pickerList').innerHTML = pickerItems.length === 0
-    ? `<li class="picker-empty">No matching categories</li>`
+    ? (q
+        ? `<li class="picker-empty picker-create" data-create-cat>No matching categories — press <kbd>Enter</kbd> to create "${escapeHtml(query.trim())}"</li>`
+        : `<li class="picker-empty">No categories yet</li>`)
     : pickerItems.map((c, i) => `
         <li class="picker-item ${i === pickerIndex ? 'is-active' : ''}" data-cat-id="${c.id}">
           <span class="cat-dot" style="background:${c.color}"></span>
@@ -1195,6 +1203,16 @@ function pickerAssignActive() {
   if (!cat) return;
   assignFocusedTo(cat.id);
   closeAssignPicker();
+}
+
+async function pickerCreateAndAssign(name) {
+  const cat = await api.addCategory(name);
+  assignFocusedTo(cat.id);
+  closeAssignPicker();
+  renderDrawer();
+  renderRail();
+  renderSidebar();
+  toast(`Created "${name}" and assigned`);
 }
 
 // -----------------------------------------------------------------------------
