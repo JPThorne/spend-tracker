@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
@@ -39,11 +40,20 @@ public class Program
             )
             .CreateLogger();
 
+        using var singleInstanceMutex = new Mutex(true, "SpendTracker-SingleInstance-9F3E2A1C-9B6E-4C7A-8E0D-5B1E2F3A4C5D", out var isFirstInstance);
+
         try
         {
             var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
             Log.Information("SpendTracker {Version} starting up. Log directory: {LogDirectory}", version, logDirectory);
             Log.Information("Assembly version detected as: {Version}", version);
+
+            if (!isFirstInstance)
+            {
+                Log.Information("Another instance of SpendTracker is already running. Opening browser and exiting.");
+                SystemTrayManager.OpenBrowser("http://localhost:5000");
+                return;
+            }
 
             var builder = WebApplication.CreateBuilder(args);
 

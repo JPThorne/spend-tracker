@@ -1,4 +1,6 @@
 using System.Windows.Forms;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace SpendTracker.Api;
 
@@ -11,6 +13,9 @@ public class TrayApplicationContext : ApplicationContext
     {
         _trayManager = new SystemTrayManager(appUrl, this, prefs);
         _webAppTask = webHost.RunAsync();
+
+        webHost.Services.GetRequiredService<IHostApplicationLifetime>()
+            .ApplicationStarted.Register(() => _trayManager.OpenOnStartup());
     }
 
     public void Shutdown()

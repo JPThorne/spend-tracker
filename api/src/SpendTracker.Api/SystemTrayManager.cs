@@ -28,7 +28,7 @@ public class SystemTrayManager : IDisposable
 
         _notifyIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application,
             Visible = true,
             Text = "SpendTracker - Personal Finance Tracker"
         };
@@ -117,6 +117,8 @@ public class SystemTrayManager : IDisposable
         }
     }
 
+    public void OpenOnStartup() => OpenBrowser(_appUrl);
+
     private void OnOpen(object? sender, EventArgs e) => OpenBrowser(_appUrl);
 
     private void OnExit(object? sender, EventArgs e)
@@ -141,7 +143,7 @@ public class SystemTrayManager : IDisposable
         _context.Shutdown();
     }
 
-    private static void OpenBrowser(string url)
+    internal static void OpenBrowser(string url)
     {
         try
         {
